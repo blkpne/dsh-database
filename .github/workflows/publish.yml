@@ -1,0 +1,73 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    uses: ./.github/workflows/check.yml
+    with:
+      full: true
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check provenance prerequisite
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          if [ "$REPOSITORY_PRIVATE" != "false" ]; then
+            echo "This release requires a public repository for npm provenance. Review repository visibility before publishing."
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Validate release tag
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/verify-release.mjs
+      - name: Install npm with trusted publishing support
+        run: npm install --global npm@11
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: release-package
+      - name: Verify validated artifact
+        run: |
+          cd release-package
+          sha256sum --check *.sha256
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, readdirSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const pkg = JSON.parse(readFileSync('../package.json', 'utf8'));
+          const files = readdirSync('.').filter(name => name.endsWith('.tgz'));
+          assert.deepEqual(files, [`${pkg.name}-${pkg.version}.tgz`]);
+          const packed = JSON.parse(execFileSync('tar', ['-xOf', files[0], 'package/package.json'], { encoding: 'utf8' }));
+          assert.deepEqual(packed, pkg, 'Artifact manifest must match the release commit');
+          for (const file of ['README.md', 'CHANGELOG.md', 'docs/compatibility.md']) {
+            const content = execFileSync('tar', ['-xOf', files[0], `package/${file}`], { encoding: 'utf8' });
+            assert.equal(content, readFileSync(`../${file}`, 'utf8'), `Artifact ${file} must match the checked release commit`);
+          }
+          NODE
+      - name: Publish validated tarball
+        env:
+          NPM_DIST_TAG: ${{ steps.release.outputs.dist_tag }}
+        run: npm publish release-package/*.tgz --ignore-scripts --access public --provenance --tag "$NPM_DIST_TAG"

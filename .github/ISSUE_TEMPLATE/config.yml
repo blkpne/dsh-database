@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全问题与私密联系
+    url: https://github.com/blkpne/dsh-database/blob/main/SECURITY.md
+    about: 先阅读联系流程；不要在公开 Issue 中提交漏洞详情。
+  - name: 使用与故障排查
+    url: https://github.com/blkpne/dsh-database/blob/main/docs/usage.md
+    about: 查看连接、授权、更新、卸载与排障步骤。

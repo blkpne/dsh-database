@@ -1,0 +1,126 @@
+name: Validate plugin
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_call:
+    inputs:
+      full:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: scope
+        run: node scripts/ci-scope.mjs
+        env:
+          CI_FULL_CHECK: ${{ inputs.full }}
+      - name: Check release metadata before building
+        run: node scripts/verify-release.mjs
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+  docs:
+    needs: scope
+    if: needs.scope.outputs.full == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit
+      - run: npm run check:docs
+  check:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: source with spaces
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, node: '22.19.0' }
+          - { os: ubuntu-latest, node: '24' }
+          - { os: macos-latest, node: '24' }
+          - { os: windows-latest, node: '22.19.0' }
+          - { os: windows-latest, node: '24' }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: source with spaces
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: source with spaces/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run audit:prod
+      - run: npm run test:pack
+      - run: npm run test:tls:protocol
+        if: runner.os == 'Windows' && matrix.node == '24'
+        env:
+          DSH_DATABASE_TEST_ROOT: 'test-results/windows TLS $ #'
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
+        with:
+          name: release-package
+          path: |
+            source with spaces/test-results/release/*.tgz
+            source with spaces/test-results/release/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+  databases:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:tls:protocol
+      - run: npm run test:docker -- --verify-cleanup
+      - run: npm run test:tls
+  validation:
+    if: always()
+    needs: [scope, docs, check, databases]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected check to succeed
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          FULL: ${{ needs.scope.outputs.full }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          DATABASES_RESULT: ${{ needs.databases.result }}
+        run: |
+          test "$SCOPE_RESULT" = success
+          if [ "$FULL" = true ]; then
+            test "$CHECK_RESULT" = success
+            test "$DATABASES_RESULT" = success
+          else
+            test "$DOCS_RESULT" = success
+          fi

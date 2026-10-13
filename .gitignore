@@ -1,0 +1,18 @@
+node_modules/
+dist/
+*.tgz
+.env*
+coverage/
+test-results/
+.DS_Store
+
+# Local tooling, logs and generated reports
+*.log
+*.tsbuildinfo
+.agents/
+.codex/
+.playwright/
+.playwright-cli/
+playwright-report/
+/docs/agent-evaluation-*.json
+/docs/ablation-*.json

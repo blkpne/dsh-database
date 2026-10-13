@@ -1,0 +1,22 @@
+name: 功能建议
+description: 说明希望解决的场景及当前阻碍。
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景与问题
+      description: 你希望完成什么？当前遇到了什么阻碍？请勿提供真实业务数据或凭据。
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 期望的体验
+      description: 描述理想结果即可，无需先设计实现方案。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 已尝试的方法
+      description: 可选，说明现有替代方法及其不足。
