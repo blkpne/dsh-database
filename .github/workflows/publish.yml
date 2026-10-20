@@ -70,4 +70,4 @@ jobs:
       - name: Publish validated tarball
         env:
           NPM_DIST_TAG: ${{ steps.release.outputs.dist_tag }}
-        run: npm publish release-package/*.tgz --ignore-scripts --access public --provenance --tag "$NPM_DIST_TAG"
+        run: npm publish ./release-package/*.tgz --ignore-scripts --access public --provenance --tag "$NPM_DIST_TAG"
