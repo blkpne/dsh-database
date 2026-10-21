@@ -88,6 +88,10 @@ jobs:
             source with spaces/test-results/release/*.sha256
           if-no-files-found: error
           retention-days: 14
+  compatibility:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
+    uses: ./.github/workflows/compatibility.yml
   databases:
     needs: scope
     if: needs.scope.outputs.full == 'true'
@@ -105,7 +109,7 @@ jobs:
       - run: npm run test:tls
   validation:
     if: always()
-    needs: [scope, docs, check, databases]
+    needs: [scope, docs, check, compatibility, databases]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -115,11 +119,13 @@ jobs:
           FULL: ${{ needs.scope.outputs.full }}
           DOCS_RESULT: ${{ needs.docs.result }}
           CHECK_RESULT: ${{ needs.check.result }}
+          COMPATIBILITY_RESULT: ${{ needs.compatibility.result }}
           DATABASES_RESULT: ${{ needs.databases.result }}
         run: |
           test "$SCOPE_RESULT" = success
           if [ "$FULL" = true ]; then
             test "$CHECK_RESULT" = success
+            test "$COMPATIBILITY_RESULT" = success
             test "$DATABASES_RESULT" = success
           else
             test "$DOCS_RESULT" = success

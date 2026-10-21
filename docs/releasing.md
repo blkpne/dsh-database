@@ -60,6 +60,7 @@ npm run check
 npm run audit:prod
 npm run release:ready
 npm run test:pack
+npm run test:compat
 ```
 
 | 检查            | 确认的内容                                                                  |

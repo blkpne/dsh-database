@@ -6,6 +6,8 @@ import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local';
 import LocalSandbox from '@deepseek-ai/dsh-sandbox-local';
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy';
 import SessionProjections from '@deepseek-ai/dsh-session-projection';
+import Sessions from '@deepseek-ai/dsh-session';
+import WorkingDirectory from '@deepseek-ai/dsh-working-directory';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 import Storage from '@deepseek-ai/dsh-storage';
 import * as StorageJson from '@deepseek-ai/dsh-storage-json';
@@ -17,7 +19,7 @@ import { join } from 'node:path';
 
 export async function harness(
   directory: string,
-  mode: 'native' | 'both' | 'ptc' = 'native',
+  mode: 'native' | 'ptc' = 'native',
   databasePlugin: typeof Database = Database,
 ) {
   const ctx = new Context();
@@ -31,7 +33,9 @@ export async function harness(
           () => ctx.plugin(LocalFileSystem, { cwd: directory }),
           () => ctx.plugin(LocalSubprocess),
           () => ctx.plugin(LocalSandbox, {}),
+          () => ctx.plugin(Sessions),
           () => ctx.plugin(SessionProjections),
+          () => ctx.plugin(WorkingDirectory, { defaultDirectory: directory }),
           () => ctx.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: directory }),
           () => ctx.plugin(NodePtcRuntime, { timeoutMs: 5000 }),
         ]),
@@ -64,6 +68,7 @@ export async function harness(
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(payload),
         }),
+        ctx.connection.browserPeer,
       );
       const data = (await response.json()) as any;
       if (!response.ok) throw Object.assign(new Error(data.message), { code: data.code });

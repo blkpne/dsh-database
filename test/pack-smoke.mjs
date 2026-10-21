@@ -32,6 +32,7 @@ const api = async (body) => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     }),
+    ctx.connection.browserPeer,
   );
   assert.equal(response.status, 200);
   return response.json();

@@ -43,6 +43,16 @@ npm run test:pack
 
 `npm pack` 自动构建并生成 `.tgz`；`test:pack` 会自行构建，在隔离目录安装实际 tarball，验证 Host/MCP/Client、持久化与卸载重载。后者需要 registry 网络访问，完成后清理安装目录，保留 tarball 和校验和。
 
+验证插件在最低支持版和最新版 DSH 中的安装与运行：
+
+```sh
+npm run test:compat
+# 指定 DSH 版本：
+npm run test:pack -- --dsh 0.2.1-rc.2
+```
+
+结果、安装日志和校验和保存在 `test-results/release/`，可通过 `DSH_DATABASE_TEST_ROOT` 调整。
+
 每次构建先清理 `dist/`，构建产物不提交。项目没有 Git 安装时自动构建的 `prepare` 钩子；向 DSH 安装插件时使用 npm 包或本地 tarball。
 
 需要手动安装本地构建时，先停止目标 Web Profile，再将下方路径替换为 `npm pack` 生成的 `.tgz` 文件的绝对路径：

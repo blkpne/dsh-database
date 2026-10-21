@@ -37,7 +37,14 @@ const result = (value: string) => ({
 
 test('actual Node process PTC returns canonical inspect data and shares limits with native calls', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-connector-ptc-'));
-  const app = await harness(directory, 'both');
+  const app = await harness(directory, 'ptc');
+  const registry = app.ctx.plugin(Agents);
+  await registry.await();
+  const id = SessionId('ptc-owner');
+  const agent = { id, session: app.ctx.sessions.create(id, { meta: { cwd: directory } }) } as Agent;
+  const scope = createScope(app.ctx, agent);
+  Object.assign(agent, { ctx: scope.ctx });
+  const unregister = app.ctx.agents.register(agent);
   try {
     let response = await app.api({
       action: 'save',
@@ -55,6 +62,7 @@ test('actual Node process PTC returns canonical inspect data and shares limits w
     });
     record = response.connections[0];
     const ptc = await app.ctx.tools.execute({
+      agent,
       name: 'run_code',
       callId: ToolCallId('ptc-parent'),
       arguments: {
@@ -65,20 +73,30 @@ test('actual Node process PTC returns canonical inspect data and shares limits w
     });
     assert.equal(ptc.isError, false, JSON.stringify(ptc));
     assert(JSON.stringify(ptc).includes('PostgreSQL'));
-    const native = await app.ctx.tools.execute({
-      name: record.inspectToolName,
-      callId: ToolCallId('native-after-ptc'),
-      arguments: { action: 'capabilities' },
-      signal: new AbortController().signal,
+    const presentation = scope.ctx.inject(['tools'], (scoped) => {
+      scoped.tools.presentAs('native');
     });
+    await presentation.await();
+    const native = await app.ctx.tools
+      .execute({
+        agent,
+        name: record.inspectToolName,
+        callId: ToolCallId('native-after-ptc'),
+        arguments: { action: 'capabilities' },
+        signal: new AbortController().signal,
+      })
+      .finally(() => presentation.dispose());
     assert.equal(native.isError, true);
-    assert(JSON.stringify(native).includes('RATE_LIMITED'));
+    assert(JSON.stringify(native).includes('RATE_LIMITED'), JSON.stringify(native));
     const snapshot = (await app.api({ action: 'observations', id: record.id })).observations;
     const child = snapshot.records.find((r: any) => r.rootCallId === 'ptc-parent');
     assert(child);
     assert.equal(child.finalHostOutcome, true);
     assert.notEqual(child.callId, child.rootCallId);
   } finally {
+    await unregister();
+    await scope.dispose();
+    await registry.dispose();
     await app.close();
     await rm(directory, { recursive: true, force: true });
   }
