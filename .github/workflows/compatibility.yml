@@ -19,6 +19,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - run: npm ci
       - name: Verify one tarball against minimum and latest DSH
         run: npm run test:compat
