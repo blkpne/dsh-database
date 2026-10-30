@@ -1,0 +1,51 @@
+name: 缺陷报告
+description: 报告可复现的安装、连接、查询或界面问题。
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先搜索已有 Issue，并查看 [故障排查](https://github.com/blkpne/dsh-database/blob/main/docs/usage.md#故障排查)。
+        **安全问题请先阅读 [安全报告指引](https://github.com/blkpne/dsh-database/blob/main/SECURITY.md)，不要在这里公开漏洞细节。**
+        不要上传密码、token、登录链接、完整 Profile、连接地址或业务数据。
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 填写插件、DSH、Node.js、数据库版本及操作系统；不适用的项可写“不适用”。
+      placeholder: |
+        dsh-database：
+        DSH：
+        Node.js：
+        数据库及版本：
+        操作系统：
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 描述最小操作步骤；需要数据时使用合成数据。
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: 预期与实际结果
+      description: 说明你期望发生什么、实际发生什么。
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 排查结果与补充信息
+      description: 可附脱敏错误码、执行阶段、截图及已尝试的方法；提交前检查附件中的敏感信息。
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已检查正文和附件，移除了凭据、登录链接及真实业务数据；此报告不包含安全漏洞详情。
+          required: true

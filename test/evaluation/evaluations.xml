@@ -1,0 +1,42 @@
+<evaluation>
+  <qa_pair>
+    <question>在固定的 2025 年第一季度商业数据中，先发现表与关联字段，再计算所有已付款订单扣除全部退款后的客户净收入。净收入最高的客户名称是什么？只返回名称。</question>
+    <answer>Aster</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>检查客户、订单及退款结构后，计算 2025 年第一季度东部地区已付款订单的净收入，避免一个订单多笔退款导致重复计算。只返回整数分。</question>
+    <answer>60000</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>发现订单和退款字段，核对退款可能分多笔的情况。2025 年第一季度有多少笔已付款订单的累计退款等于订单金额？只返回整数。</question>
+    <answer>1</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>发现表结构并按月汇总，排除未付款及取消订单，扣除每笔订单的全部退款。2025 年第一季度净收入最高的月份是什么？只返回 YYYY-MM。</question>
+    <answer>2025-03</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>检查订单状态及客户关联，找出在 2025 年一月和三月都至少有一笔已付款订单的客户。全额退款订单仍算已付款订单。只返回客户数量。</question>
+    <answer>3</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>检查客户、订单和退款关联，按客户计算第一季度退款总额除以已付款订单原始金额总额。退款率最高的客户是哪位？只返回名称。</question>
+    <answer>Dune</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>发现客户及订单结构，核对全部客户（注意结果行数上限）。哪位客户在 2025 年第一季度没有任何已付款订单，但存在待付款订单？只返回名称。</question>
+    <answer>Elm</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>检查订单和退款结构，区分退款记录数与退款订单数。2025 年第一季度出现多笔退款的已付款订单，扣除这些退款后的净金额合计是多少？只返回整数分。</question>
+    <answer>20000</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>发现相关字段后，比较西部地区与北部地区 2025 年第一季度的净收入，只统计已付款订单并扣除全部退款。西部比北部多多少？只返回整数分。</question>
+    <answer>18000</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>检查客户与订单结构，按稳定主键遍历所有客户，不能把截断的结果当成完整列表。第一季度有已付款订单的客户中，谁的已付款订单数量最多？只返回名称。</question>
+    <answer>Aster</answer>
+  </qa_pair>
+</evaluation>

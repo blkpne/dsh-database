@@ -1,0 +1,15 @@
+dist/
+node_modules/
+.agents/
+package-lock.json
+test-results/
+coverage/
+*.tgz
+.codex/
+.playwright/
+.playwright-cli/
+playwright-report/
+*.log
+*.tsbuildinfo
+/docs/agent-evaluation-*.json
+/docs/ablation-*.json
