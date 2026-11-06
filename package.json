@@ -1,8 +1,8 @@
 {
   "name": "dsh-database",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT",
-  "description": "Manage read-only MySQL, MariaDB, PostgreSQL, SQL Server, Oracle and MongoDB connections through per-connection MCP tools in DeepSeek Harness.",
+  "description": "DeepSeek Harness database plugin with session-scoped access, schema discovery and read-only queries for MySQL, MariaDB, PostgreSQL, SQL Server, Oracle and MongoDB.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,6 +19,7 @@
     "dist",
     "cordis.patch.yml",
     "README.md",
+    "README.en.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
     "docs/reference.md",
@@ -90,9 +91,12 @@
   "keywords": [
     "deepseek-harness",
     "dsh-plugin",
-    "mcp",
-    "mysql",
     "database",
+    "mcp",
+    "read-only",
+    "schema-discovery",
+    "session-authorization",
+    "mysql",
     "mariadb",
     "postgresql",
     "sqlserver",
@@ -110,14 +114,14 @@
     "zod": "4.6.7"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/cordis": "~4.0.4 || ~4.1.0",
     "@deepseek-ai/dsh-agent": "*",
     "@deepseek-ai/dsh-client-connection": "*",
     "@deepseek-ai/dsh-credentials": "*",
     "@deepseek-ai/dsh-scope": "*",
     "@deepseek-ai/dsh-storage-domain": "*",
     "@deepseek-ai/dsh-tools": "*",
-    "@deepseek-ai/schemastery": "~3.18.4"
+    "@deepseek-ai/schemastery": "~3.18.4 || ~3.19.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",
@@ -163,5 +167,9 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "author": {
+    "name": "blkpne",
+    "url": "https://github.com/blkpne"
   }
 }

@@ -22,6 +22,7 @@ test('host matrix follows the main release, including independent library versio
     }),
     [
       '@deepseek-ai/dsh@0.3.0-rc.1',
+      '@deepseek-ai/dsh-tool-executor-native@0.3.0-rc.1',
       '@deepseek-ai/dsh-tools@0.3.0-rc.1',
       '@deepseek-ai/cordis@~4.1.0',
     ],
@@ -36,4 +37,21 @@ test('host matrix refuses missing, mixed or unsupported release metadata', () =>
     () => hostPackageSpecs(plugin, { version: '0.2.1-rc.2', dependencies: {} }),
     /cordis/,
   );
+});
+
+test('host smoke installs its executor explicitly only on executor-based releases', () => {
+  const executor = '@deepseek-ai/dsh-tool-executor-native@';
+  for (const version of ['0.2.0-rc.2', '0.2.1-rc.2', '0.2.2-rc.1', '0.2.2', '0.3.0-rc.1']) {
+    const specs = hostPackageSpecs(plugin, {
+      version,
+      dependencies: { '@deepseek-ai/cordis': '~4.1.0' },
+    });
+    const expected = ['0.2.0-rc.2', '0.2.1-rc.2'].includes(version)
+      ? []
+      : [`${executor}${version}`];
+    assert.deepEqual(
+      specs.filter((spec) => spec.startsWith(executor)),
+      expected,
+    );
+  }
 });

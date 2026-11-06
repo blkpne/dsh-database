@@ -39,7 +39,13 @@ const api = async (body) => {
 };
 try {
   await mount(SystemPrompt, {});
-  await mount(ToolRuntime, { mode: 'native' });
+  // New hosts select an executor provider; older hosts configure native mode here.
+  const batchTools = typeof ToolRuntime.prototype.setExecutor === 'function';
+  await mount(ToolRuntime, batchTools ? {} : { mode: 'native' });
+  if (batchTools) {
+    const NativeExecutor = await import('@deepseek-ai/dsh-tool-executor-native');
+    await mount(NativeExecutor);
+  }
   await mount(Storage);
   await mount(StorageJson, { root: join(process.cwd(), 'storage') });
   await mount(StorageDomain, { backend: 'json' });
@@ -58,13 +64,18 @@ try {
     await api({ action: 'toggle', id: record.id, revision: record.revision, enabled: true })
   ).connections[0];
   assert.equal(record.status, 'enabled');
-  const call = (name, args) =>
-    ctx.tools.execute({
-      name,
-      callId: `pack-${name}`,
-      arguments: args,
-      signal: new AbortController().signal,
+  const call = async (name, args) => {
+    const callId = `pack-${name}`;
+    const signal = new AbortController().signal;
+    if (!batchTools) return ctx.tools.execute({ name, callId, arguments: args, signal });
+    const batch = await ctx.tools.execute({
+      calls: [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(args) }],
+      signal,
     });
+    assert.equal(batch.results.length, 1);
+    assert.equal(batch.results[0].callId, callId);
+    return batch.results[0].result;
+  };
   const result = await call(record.inspectToolName, { action: 'capabilities' });
   assert.equal(result.isError, false);
   assert(JSON.stringify(result).includes('MySQL'));

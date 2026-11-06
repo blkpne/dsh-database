@@ -20,6 +20,11 @@ export function hostPackageSpecs(plugin, host) {
   assert(semver.satisfies(host.version, plugin.engines.dsh, { includePrerelease: true }));
   return [
     `@deepseek-ai/dsh@${host.version}`,
+    // The smoke imports this provider directly for the executor-based tools API.
+    // Do not require it from older hosts, where native execution is built in.
+    ...(semver.gte(host.version, '0.2.2-rc.1')
+      ? [`@deepseek-ai/dsh-tool-executor-native@${host.version}`]
+      : []),
     // Current-only development providers must not become requirements on older hosts.
     ...Object.keys(plugin.peerDependencies)
       .filter((name) => name.startsWith('@deepseek-ai/'))

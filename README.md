@@ -1,8 +1,12 @@
-# dsh-database
+# dsh-database by blkpne
 
-**在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 中，让 Agent 按授权探索数据库并执行只读查询。**
+[简体中文](README.md) · [English](README.en.md) · [npm 包](https://www.npmjs.com/package/dsh-database)
 
-通过 Web 界面管理连接，让 Agent 先了解表或集合的结构，再回答数据问题。支持 **MySQL、MariaDB、PostgreSQL、SQL Server、Oracle 和 MongoDB**。
+**[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 数据库插件：让 Agent 按会话授权探索数据结构并执行只读查询。**
+
+通过 Web 界面管理连接，让 Agent 先了解表或集合的结构，再回答数据问题。支持 **MySQL、MariaDB、PostgreSQL、SQL Server、Oracle 和 MongoDB**。连接默认关闭 Agent 访问，可按会话授权，也可仅开放结构发现。
+
+项目源码为 [blkpne/dsh-database](https://github.com/blkpne/dsh-database)，对应 npm 包为 [dsh-database](https://www.npmjs.com/package/dsh-database)。识别同名项目时，请核对仓库所有者与 npm 包的 Repository 链接。
 
 [开始使用](#开始使用) · [使用指南](docs/usage.md) · [兼容性](docs/compatibility.md) · [参与贡献](CONTRIBUTING.md)
 

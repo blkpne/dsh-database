@@ -51,6 +51,7 @@ for (const file of [
   ),
   'cordis.patch.yml',
   'README.md',
+  'README.en.md',
   'CONTRIBUTING.md',
   'SECURITY.md',
   'docs/reference.md',
@@ -77,7 +78,7 @@ checkExport(pkg.exports);
 assert(files.has(pkg.dsh.bundle.patch.replace(/^\.\//, '')), 'Missing bundle patch');
 for (const file of files)
   assert(
-    /^(dist\/.*\.(js|d\.ts)|docs\/(usage|reference|compatibility|releasing)\.md|docs\/assets\/(connection-manager|agent-analysis)\.jpg|docs\/examples\/ecommerce\/(README\.md|seed\.sql|queries\.sql)|SECURITY\.md|package\.json|README\.md|CONTRIBUTING\.md|CHANGELOG\.md|LICENSE|cordis\.patch\.yml)$/.test(
+    /^(dist\/.*\.(js|d\.ts)|docs\/(usage|reference|compatibility|releasing)\.md|docs\/assets\/(connection-manager|agent-analysis)\.jpg|docs\/examples\/ecommerce\/(README\.md|seed\.sql|queries\.sql)|SECURITY\.md|package\.json|README(?:\.en)?\.md|CONTRIBUTING\.md|CHANGELOG\.md|LICENSE|cordis\.patch\.yml)$/.test(
       file,
     ) && !/(^|\/)(node_modules|test-results|\.env|connections|credentials)(\/|\.|$)/.test(file),
     `Private/test file packed: ${file}`,
