@@ -1,6 +1,6 @@
 /** Real server TLS matrix. No system trust changes and no production bypass option. */
 import assert from 'node:assert/strict';
-import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rm, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { temporaryDirectory, linkDependencies } from '../../scripts/paths.mjs';
 import { parseArgs } from 'node:util';
@@ -8,6 +8,7 @@ import { command, docker } from './process.js';
 import { definitions } from './definitions.js';
 import { withContainer } from './lifecycle.js';
 import { config, seed, waitReady, withSql } from './fixtures.js';
+import { createTlsCertificates } from './tls-certificates.js';
 
 const { values: flags } = parseArgs({
   options: { protocol: { type: 'boolean' }, engines: { type: 'string' } },
@@ -31,107 +32,13 @@ const directory = join(root, 'work');
 await mkdir(directory);
 const path = (name: string) => join(directory, name);
 const openssl = (args: string[]) => command('openssl', args);
-// OpenSSL config values have their own escaping, even when argv bypasses the shell.
-const configValue = (value: string) => `"${value.replace(/[\\"$]/g, '\\$&')}"`;
 const results: unknown[] = [];
 try {
   await linkDependencies(directory);
-  // Exercise OpenSSL's parser on Windows drive/UNC paths and shell-like filename characters.
-  // This stays in the optional TLS suite: basic development does not require OpenSSL.
-  for (const value of [
-    String.raw`C:\Users\alice\database test\ca.pem`,
-    String.raw`C:\Users\alice $lab #1\ca.pem`,
-    String.raw`\\server\share $test\ca.pem`,
-    '/tmp/a "quote" # $HOME/ca.pem',
-  ]) {
-    await writeFile(path('path.cnf'), `asn1=FORMAT:UTF8,UTF8String:${configValue(value)}\n`);
-    await openssl(['asn1parse', '-genconf', path('path.cnf'), '-out', path('path.der'), '-noout']);
-    const bytes = Buffer.from(value);
-    assert(bytes.length < 128);
-    assert.deepEqual(
-      await readFile(path('path.der')),
-      Buffer.concat([Buffer.from([0x0c, bytes.length]), bytes]),
-      'OpenSSL must preserve the configured path exactly',
-    );
-  }
-  console.log('OpenSSL config: 4 path round-trip checks passed');
-  await openssl([
-    'req',
-    '-x509',
-    '-newkey',
-    'rsa:2048',
-    '-nodes',
-    '-keyout',
-    path('ca.key'),
-    '-out',
-    path('ca.pem'),
-    '-days',
-    '2',
-    '-subj',
-    '/CN=DSH isolated TLS fixture',
-  ]);
-  await openssl([
-    'req',
-    '-new',
-    '-newkey',
-    'rsa:2048',
-    '-nodes',
-    '-keyout',
-    path('server.key'),
-    '-out',
-    path('server.csr'),
-    '-subj',
-    '/CN=fixture.invalid',
-  ]);
-  // Docker's unprivileged database process must be able to read this disposable fixture key.
-  const { chmod } = await import('node:fs/promises');
-  await chmod(directory, 0o755);
-  await chmod(path('server.key'), 0o644);
-  for (const [name, san] of [
-    ['matching', 'DNS:localhost,IP:127.0.0.1,IP:::1'],
-    ['dns', 'DNS:localhost'],
-    ['ip', 'IP:127.0.0.1'],
-    ['wrong', 'DNS:wrong.invalid'],
-  ] as const) {
-    await writeFile(path(`${name}.ext`), `subjectAltName=${san}\nextendedKeyUsage=serverAuth\n`);
-    await openssl([
-      'x509',
-      '-req',
-      '-in',
-      path('server.csr'),
-      '-CA',
-      path('ca.pem'),
-      '-CAkey',
-      path('ca.key'),
-      '-CAcreateserial',
-      '-out',
-      path(`${name}.pem`),
-      '-days',
-      '2',
-      '-extfile',
-      path(`${name}.ext`),
-    ]);
-  }
-  await writeFile(path('index'), '');
-  await writeFile(path('serial'), '10\n');
-  await writeFile(
-    path('ca.cnf'),
-    `[ca]\ndefault_ca=fixture\n[fixture]\ndatabase=${configValue(path('index'))}\nserial=${configValue(path('serial'))}\nnew_certs_dir=${configValue(directory)}\ncertificate=${configValue(path('ca.pem'))}\nprivate_key=${configValue(path('ca.key'))}\ndefault_md=sha256\npolicy=policy\nx509_extensions=ext\n[policy]\ncommonName=supplied\n[ext]\nsubjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n`,
+  await createTlsCertificates(directory);
+  console.log(
+    `TLS fixture permissions explicit; caller umask ${process.umask().toString(8)} unchanged`,
   );
-  await openssl([
-    'ca',
-    '-config',
-    path('ca.cnf'),
-    '-batch',
-    '-startdate',
-    '20200101000000Z',
-    '-enddate',
-    '20200102000000Z',
-    '-in',
-    path('server.csr'),
-    '-out',
-    path('expired.pem'),
-  ]);
   if (flags.protocol) {
     const { protocolMatrix } = await import('../experiments/tls-protocol.js');
     await protocolMatrix(directory, root);
@@ -143,19 +50,38 @@ try {
     for (const engine of engines.filter((engine) => selected.includes(engine))) {
       console.log(`${engine}: certificates generated, starting isolated server`);
       await writeFile(path('active.pem'), await readFile(path('matching.pem')));
+      await chmod(path('active.pem'), 0o644);
       await withContainer(
         engine,
         async (instance) => {
           console.log(`${engine}: waiting for server readiness`);
           await waitReady(instance);
+          const permissions = await docker([
+            'exec',
+            instance.name,
+            'stat',
+            '-c',
+            '%a %U:%G',
+            '/tmp/dsh-ca.pem',
+            '/tmp/dsh-server-cert.pem',
+            '/tmp/dsh-server-key.pem',
+          ]);
+          const owner = engine === 'postgresql' ? 'postgres' : 'mysql';
+          assert.deepEqual(permissions.trim().split('\n'), [
+            '644 root:root',
+            '644 root:root',
+            `600 ${owner}:${owner}`,
+          ]);
+          console.log(`${engine}: public certificates 0644; disposable key 0600 owned by ${owner}`);
           await seed(instance);
           console.log(`${engine}: TLS cases`);
-          const query = async (host: string, trusted: boolean) =>
+          const query = async (host: string, trusted: boolean, lifecycle = false) =>
             JSON.parse(
               await command(process.execPath, ['--import', 'tsx', 'test/docker/tls-worker.ts'], {
                 input: JSON.stringify({
                   config: { ...config(instance), host, tls: true },
                   password: instance.password,
+                  lifecycle,
                 }),
                 env: { ...process.env, NODE_EXTRA_CA_CERTS: trusted ? path('ca.pem') : '' },
                 timeoutMs: 30000,
@@ -202,6 +128,7 @@ try {
                 certificateFile,
               ]);
             }
+            await chmod(certificateFile, 0o644);
             await docker(['cp', certificateFile, `${instance.name}:/tmp/dsh-server-cert.pem`]);
             await withSql(instance, true, async ({ sql }) => {
               await sql(
@@ -245,6 +172,19 @@ try {
                 'Failure must come from TLS validation, not authentication or connectivity',
               );
           }
+          if (engine === 'mysql' || engine === 'mariadb') {
+            const result = await query('127.0.0.1', true, true);
+            assert.deepEqual(result, {
+              ok: true,
+              lifecycle: { truncated: true, canceled: true, recovered: true },
+            });
+            results.push({ engine, kind: 'TLS lifecycle', result });
+            await writeFile(
+              `${root}/tls-results.json`,
+              JSON.stringify({ node: process.version, results }, null, 2),
+            );
+            console.log(`${engine}: TLS truncation, cancellation and recovery passed`);
+          }
         },
         {
           timeoutMs: 240000,
@@ -254,18 +194,34 @@ try {
             const changed = [...args];
             const index = changed.indexOf(definitions[engine].image);
             assert(index > 0);
-            if (engine === 'postgresql') {
-              changed.splice(index, 0, '--entrypoint', '/bin/sh');
-              changed.push(
-                '-c',
-                'chown postgres:postgres /tmp/dsh-server-key.pem && chmod 600 /tmp/dsh-server-key.pem && exec /usr/local/bin/docker-entrypoint.sh postgres -c ssl=on -c ssl_ca_file=/tmp/dsh-ca.pem -c ssl_cert_file=/tmp/dsh-server-cert.pem -c ssl_key_file=/tmp/dsh-server-key.pem',
-              );
-            } else
-              changed.push(
-                '--ssl-ca=/tmp/dsh-ca.pem',
-                '--ssl-cert=/tmp/dsh-server-cert.pem',
-                '--ssl-key=/tmp/dsh-server-key.pem',
-              );
+            const daemonArgs = changed.splice(index + 1);
+            changed.splice(index, 0, '--entrypoint', '/bin/sh');
+            const owner = engine === 'postgresql' ? 'postgres' : 'mysql';
+            const tlsArgs =
+              engine === 'postgresql'
+                ? [
+                    '-c',
+                    'ssl=on',
+                    '-c',
+                    'ssl_ca_file=/tmp/dsh-ca.pem',
+                    '-c',
+                    'ssl_cert_file=/tmp/dsh-server-cert.pem',
+                    '-c',
+                    'ssl_key_file=/tmp/dsh-server-key.pem',
+                  ]
+                : [
+                    '--ssl-ca=/tmp/dsh-ca.pem',
+                    '--ssl-cert=/tmp/dsh-server-cert.pem',
+                    '--ssl-key=/tmp/dsh-server-key.pem',
+                  ];
+            changed.push(
+              '-c',
+              `chown ${owner}:${owner} /tmp/dsh-server-key.pem && chmod 600 /tmp/dsh-server-key.pem && chown 0:0 /tmp/dsh-ca.pem /tmp/dsh-server-cert.pem && chmod 644 /tmp/dsh-ca.pem /tmp/dsh-server-cert.pem && exec /usr/local/bin/docker-entrypoint.sh "$@"`,
+              'dsh-tls-fixture',
+              engine === 'postgresql' ? 'postgres' : engine === 'mysql' ? 'mysqld' : 'mariadbd',
+              ...daemonArgs,
+              ...tlsArgs,
+            );
             const id = await docker(changed, options);
             console.log(`${engine}: copying temporary certificates`);
             // Copy into the owned container; avoid host bind mounts and Desktop file-sharing state.

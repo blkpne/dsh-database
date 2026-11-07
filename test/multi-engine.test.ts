@@ -306,6 +306,32 @@ test('driver errors for every engine stay redacted', () => {
   }
 });
 
+test('PostgreSQL undefined-column errors guide schema recovery without exposing driver details', async () => {
+  const runner = new QueryRunner(
+    connectionInput.parse({ ...input, engine: 'postgresql' }),
+    async () => '',
+    async () => async () => {
+      throw Object.assign(new Error('column private_column does not exist'), {
+        code: '42703',
+        detail: 'SELECT private_column FROM private_table',
+        hint: 'Perhaps you meant private_other_column',
+      });
+    },
+  );
+  try {
+    await assert.rejects(runner.query('SELECT missing_column FROM example'), (error: unknown) => {
+      const failure = safeError(error);
+      assert.equal(failure.code, '42703');
+      assert.match(failure.message, /列不存在/);
+      assert.match(failure.message, /inspect.*describe/);
+      assert(!JSON.stringify(failure).includes('private_'));
+      return true;
+    });
+  } finally {
+    await runner.close();
+  }
+});
+
 test('MongoDB rejects excessive UTF-8, cycles, non-JSON values and deep objects before parsing', () => {
   const filter: Record<string, unknown> = {};
   filter.self = filter;

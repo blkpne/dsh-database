@@ -16,7 +16,7 @@ export async function protocolMatrix(directory: string, output: string) {
   const results: unknown[] = [];
   const variants = [
     ['full', source],
-    ['without-identity', source.replace('verifyIdentity: true', 'verifyIdentity: false')],
+    ['without-identity', source.replace('verifyServerIdentity(host, cert)', 'undefined')],
     ['without-ip-context', source.replace('config.tls && isIP(host)', 'false')],
   ];
   for (const [variant, contents] of variants) {
@@ -38,6 +38,11 @@ export async function protocolMatrix(directory: string, output: string) {
             ['matching', '127.0.0.1', true, true],
             ['matching', 'localhost', true, true],
             ['matching', '::1', true, true],
+            ['ip', '::1', true, false],
+            ['dns', '::1', true, false],
+            ['wrong', '::1', true, false],
+            ['expired', '::1', true, false],
+            ['matching', '::1', false, false],
             ['ip', '127.0.0.1', true, true],
             ['dns', 'localhost', true, true],
             ['dns', '127.0.0.1', true, false],

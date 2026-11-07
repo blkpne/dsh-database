@@ -61,6 +61,8 @@ inspect 包含四个动作，通常先定位命名空间和对象，再读取结
 { "action": "describe", "name": "orders", "schema": "public", "refresh": true }
 ```
 
+SQL 的 `name` 按字面匹配对象名，schema/owner 与 catalog 使用独立字段。例如 `sales.orders` 应填写 `name: "orders"`、`schema: "sales"`。对象名本身含点时保留点，插件不会自动拆分。带点名称的 describe 返回空列结果时，会提示核对这些字段；空结果仍不能证明对象不存在。
+
 search 支持 `type: table|view|collection`，名称和 schema 通过驱动绑定参数。数据库范围有以下差异：
 
 - MySQL/MariaDB 返回可见库，支持切换 `catalog`；其他引擎限当前数据库或服务。
@@ -78,6 +80,8 @@ search 支持 `type: table|view|collection`，名称和 schema 通过驱动绑�
 | PostgreSQL 列权限 | 只返回可读列，并要求 schema USAGE；只有列授权时，整表的键、索引和注释标记 `denied/METADATA_PARTIAL`                |
 
 元数据每节最多 500 行，完整结构化结果最多 256 KiB，与业务查询行数上限独立。检查 `truncated`、`truncationReason` 和 `nextOffset`；describe 的超大对象可能不完整，插件不会自动 COUNT 或采样补齐。
+
+PostgreSQL 可读列含 `timestamp with time zone` 时，列说明会提示时间转换方向。本地日期边界应先表示为不带时区的 `timestamp`，再通过 `AT TIME ZONE` 和指定区域得到边界时刻；对 `timestamptz` 使用同一运算则得到不带时区的当地时间。两者用途不同，不能混用；见 [PostgreSQL 日期与时间文档](https://www.postgresql.org/docs/17/functions-datetime.html#FUNCTIONS-DATETIME-ZONECONVERT)。
 
 每个连接运行实例的缓存最多 64 项 / 2 MiB，TTL 为 60 秒。缓存按可信顶层调用者隔离，子 Agent 与所属会话共享。配置或策略变更会替换实例；外部数据库授权变化在 `refresh:true` 或 TTL 到期后反映。
 

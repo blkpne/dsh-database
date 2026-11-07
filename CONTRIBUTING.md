@@ -133,10 +133,24 @@ npm run dev:web -- --no-open
 | `npm run test:docker -- --verify-cleanup`     | 六库及 SIGTERM/SIGKILL 后的所属容器、匿名卷回收                                                          |
 | `npm run test:tls:protocol`                   | 无 Docker 的 MySQL/PG 认证边界与 MongoDB/Oracle TLS 握手验证，包含证书身份、分片/合并及 OpenSSL 路径解析 |
 | `npm run test:tls -- --engines postgresql`    | 真实数据库证书、身份与不降级验证                                                                         |
+| `npm run test:tls:sqlserver`                  | 隔离 SQL Server 的真实 TLS 认证、精确查询、DNS/IPv4/IPv6 证书身份、信任链与认证前拒绝                    |
+| `npm run test:tls:oracle`                     | 隔离 Oracle TCPS 的真实认证与精确查询；需要 Java 与显式提供的 Oracle PKI 工具                            |
+| `npm run test:oracle:runtime`                 | Oracle 驱动与 Node 补丁版本的协议对照，不代表数据库认证或查询                                            |
 | `npm run test:docker:cleanup`                 | 只清理本工具标记且租期已过的测试容器                                                                     |
 | `npm run test:profile`                        | 按 `DSH_DATABASE_TEST_PROFILE_LOG` 提供的本机启动日志验证 API 认证；不输出 token                         |
 
 ### 隔离数据库与夹具
+
+TLS 夹具不修改调用者的 umask。临时目录为 0700，宿主上的测试私钥为 0600；
+公有证书和 CA 证书显式设置为 0644。CA 私钥不复制到容器；一次性服务器私钥
+在容器启动前设为 0600，并交给数据库服务用户。限制性 umask 0077 也应通过
+权限回归与真实 TLS 检查，结束后删除临时密钥、所属容器及匿名卷。
+
+SQL Server TLS 检查固定使用 `test/docker/definitions.ts` 的镜像，换证书后重新等待本次启动的就绪日志并读取当前临时映射端口。负例必须观察到证书错误码，不能把端口拒绝或超时当成安全校验通过。IPv6 通过本地透明字节转发到所属容器，证书仍针对 `::1` 校验。
+
+Oracle TCPS 检查另需 Java 与 Oracle 发布的 `oraclepki.jar`、`osdt_core.jar`、`osdt_cert.jar`，来源见 [Oracle Maven 指南](https://www.oracle.com/database/technologies/maven-central-guide.html)。设置 `DSH_TEST_ORAPKI_CLASSPATH` 为这三个工具 jar 的 Java classpath；工具只在运行前制作本次临时钱包，不进入生产依赖，不改变系统信任。容器只接收服务端钱包，不接收 CA 私钥。
+
+可用 `DSH_TEST_NODE_CONTROLS` 指定逗号分隔的 Node 可执行文件作串行对照；SQL Server 与 Oracle TCPS 入口在所属数据库中查询，`test:oracle:runtime` 只连接协议监听器。后者还接受 `DSH_TEST_ORACLE_DRIVER_MODULE` 指定已安装的对照驱动入口，不修改项目锁定的驱动。Node 24.18/24.19 的 Oracle IPv6 失败被明确记录为已知运行时负对照，不计为正常数据库兼容通过。
 
 容器每轮生成凭据，绑定随机 loopback 数据库端口，不依赖个人数据库。默认串行运行；失败返回非零，不静默跳过指定引擎。主入口可用 `--timeout 600` 指定每实例时限（1–1800 秒），镜像拉取另有超时。
 
@@ -187,9 +201,9 @@ PowerShell 使用 `$env:NODE_EXTRA_CA_CERTS = 'C:\path\to\test-ca.pem'` 或 `$en
 <details>
 <summary>需要真实模型或机制对比时展开；在线模型调用会消耗 API 额度</summary>
 
-`npm run test:agent` 要求 `DSH_DATABASE_LIVE_EVAL=1` 和 `DEEPSEEK_API_KEY`，也可用 `DSH_DATABASE_EVAL_CREDENTIAL_FILE` 显式指定本地 credentials YAML。默认评测当前代码。可用 `DSH_DATABASE_EVAL_ENGINES` 选择引擎、`DSH_DATABASE_EVAL_MODEL` 指定模型、`DSH_DATABASE_EVAL_OUTPUT` 指定报告路径。仅向模型暴露新建合成夹具，会消耗 API 额度。
+`npm run test:agent` 要求 `DSH_DATABASE_LIVE_EVAL=1`、显式请求次数上限 `DSH_DATABASE_EVAL_MAX_REQUESTS`（1–10000 的整数，例如 `120`）和 `DEEPSEEK_API_KEY`，也可用 `DSH_DATABASE_EVAL_CREDENTIAL_FILE` 显式指定本地 credentials YAML。默认评测当前代码。可用 `DSH_DATABASE_EVAL_ENGINES` 选择引擎、`DSH_DATABASE_EVAL_MODEL` 指定模型、`DSH_DATABASE_EVAL_OUTPUT` 指定报告路径。请求次数上限跨引擎、重复和对比版本累计，在发起请求前扣减；它不是人民币费用上限。仅向模型暴露新建合成夹具，会消耗 API 额度。
 
-可选 `DSH_DATABASE_EVAL_BASELINE` 指向调用者提供的兼容插件源码入口，启用 A/B 比较；`DSH_DATABASE_EVAL_RESUME=1` 只复用同模型、同题目、同 baseline 源码的已成功基线记录。`DSH_DATABASE_EVAL_VERIFY=1` 先运行动态断言。全部六库共 20 题，每题 3 次，完整答案严格匹配；模型循环由脚本执行，不能代替 Web AgentLoop 验收。
+可选 `DSH_DATABASE_EVAL_BASELINE` 指向调用者提供的兼容插件源码入口，启用 A/B 比较；`DSH_DATABASE_EVAL_RESUME=1` 只复用同模型、同题目、同 baseline 源码的已成功基线记录。`DSH_DATABASE_EVAL_VERIFY=1` 先运行动态断言。全部六库共 25 题（含 PostgreSQL 的五道质量回归题），每题 3 次，完整答案严格匹配；模型循环由脚本执行，不能代替 Web AgentLoop 验收。
 
 `test:ablation` 比较生命周期回收、调用者额度、结构缓存和只读屏障，需要 PostgreSQL 镜像；`test:oracle:metadata` 比较固定约束查询形状，需要 Oracle 镜像。实验生成物保留在唯一目录中，不加入产品开关，不作为生产吞吐或所有部署场景的承诺。
 
@@ -204,7 +218,7 @@ PowerShell 使用 `$env:NODE_EXTRA_CA_CERTS = 'C:\path\to\test-ca.pem'` 或 `$en
 | `test:dev-web`                   | 配置、命令、取消、端口重启与 PID 复用保护；Windows 执行真实端口测试，POSIX 缺少 lsof 时仅跳过真实端口测试          |
 | `test:docker`                    | 本机 Docker 的 Linux 容器；SQL Server 需要原生 amd64，SQL Server/Oracle 需要至少 3.5 GiB Docker 内存               |
 | `test:tls` / `test:tls:protocol` | OpenSSL；真实 TLS 另需 Docker；协议夹具包含 IPv6 loopback，环境必须启用 IPv6                                       |
-| `test:agent`                     | 显式付费评测开关、DeepSeek API 密钥、本机 Docker 及对应数据库镜像                                                  |
+| `test:agent`                     | 显式付费评测开关和请求次数上限、DeepSeek API 密钥、本机 Docker 及对应数据库镜像                                    |
 
 ARM 开发者可先运行 `npm run test:docker -- --engines mysql,mariadb,postgresql,mongodb`；不因某引擎平台限制阻止编辑、基础检查或打包。完整六库门禁在 Linux amd64 CI 运行。PostgreSQL 测试同时运行[公开电商示例](docs/examples/ecommerce/README.md)，核对月度与渠道指标、只读权限及重复导入保护；可用 `npm run test:docker -- --engines postgresql` 单独复核。容器镜像有各自条款，运行前核对供应商要求。
 

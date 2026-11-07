@@ -13,7 +13,7 @@ import { command } from '../docker/process.js';
 
 export async function pgProtocolMatrix(directory: string, output: string) {
   const source = await readFile(projectPath('src/adapters/postgresql.ts'), 'utf8');
-  const needle = 'checkServerIdentity(identity, cert)';
+  const needle = 'verifyServerIdentity(identity, cert)';
   assert.equal(source.split(needle).length, 2);
   const results: unknown[] = [];
   for (const variant of ['full', 'without-bound-identity']) {
@@ -21,7 +21,7 @@ export async function pgProtocolMatrix(directory: string, output: string) {
     await build({
       stdin: {
         contents:
-          variant === 'full' ? source : source.replace(needle, 'checkServerIdentity(_host, cert)'),
+          variant === 'full' ? source : source.replace(needle, 'verifyServerIdentity(_host, cert)'),
         loader: 'ts',
         resolveDir: projectPath('src/adapters'),
       },
@@ -39,6 +39,11 @@ export async function pgProtocolMatrix(directory: string, output: string) {
             ['matching', '127.0.0.1', true, true],
             ['matching', 'localhost', true, true],
             ['matching', '::1', true, true],
+            ['ip', '::1', true, false],
+            ['dns', '::1', true, false],
+            ['wrong', '::1', true, false],
+            ['expired', '::1', true, false],
+            ['matching', '::1', false, false],
             ['ip', '127.0.0.1', true, true],
             ['dns', 'localhost', true, true],
             ['dns', '127.0.0.1', true, false],

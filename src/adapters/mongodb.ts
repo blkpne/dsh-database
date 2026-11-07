@@ -5,6 +5,7 @@ import type { Document } from 'mongodb';
 import type { Adapter } from './types.js';
 import type { MongoQuery } from '../mongo.js';
 import { abortable, networkHost } from './types.js';
+import { verifyServerIdentity } from './tls.js';
 
 export const execute: Adapter = async (raw, { config, password, signal, result }) => {
   const input = raw as MongoQuery;
@@ -20,6 +21,7 @@ export const execute: Adapter = async (raw, { config, password, signal, result }
     tls: config.tls,
     tlsAllowInvalidCertificates: false,
     tlsAllowInvalidHostnames: false,
+    ...(config.tls ? { checkServerIdentity: verifyServerIdentity } : {}),
     serverSelectionTimeoutMS: Math.min(config.timeoutMs, 10000),
     connectTimeoutMS: Math.min(config.timeoutMs, 10000),
     socketTimeoutMS: config.timeoutMs,

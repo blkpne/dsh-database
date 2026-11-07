@@ -15,12 +15,22 @@ import { docker } from '../docker/process.js';
 import { exercise } from '../docker/scenarios.js';
 import { selectEngines } from '../docker/definitions.js';
 import type { Engine } from '../../src/engines.js';
+import {
+  qualityCases,
+  qualitySeed,
+  verifyQualityFixture,
+  gradeAnswer,
+  requestBudget,
+  qualityEvidence,
+} from './quality.js';
+import { QueryRunner } from '../../src/query.js';
 
 assert.equal(
   process.env.DSH_DATABASE_LIVE_EVAL,
   '1',
   'Set DSH_DATABASE_LIVE_EVAL=1 to explicitly run paid, real model evaluations.',
 );
+const budget = requestBudget(process.env.DSH_DATABASE_EVAL_MAX_REQUESTS);
 const model = process.env.DSH_DATABASE_EVAL_MODEL ?? 'deepseek-flash';
 const output = resolve(
   process.env.DSH_DATABASE_EVAL_OUTPUT || artifactsPath(`agent-${Date.now()}.json`),
@@ -54,57 +64,60 @@ const sources = {
 const repetitions = 3;
 const engines = selectEngines(process.env.DSH_DATABASE_EVAL_ENGINES);
 const allEngines: Engine[] = ['mysql', 'mariadb', 'postgresql', 'sqlserver', 'oracle', 'mongodb'];
-const cases = allEngines.flatMap((engine) => {
-  const where =
-    engine === 'oracle'
-      ? 'SYSTEM schema 下的 DSH_TEST_ITEMS 表'
-      : engine === 'mongodb'
-        ? 'dsh_test_items 集合'
-        : 'dsh_test_items 表';
-  const prefix = `使用此 ${engine} 连接，先发现并理解 ${where} 的结构，再读取需要的数据。`;
-  return [
-    {
-      id: `${engine}-sum`,
-      engine,
-      question: `${prefix}category 为 A 的记录中 amount 的总和是多少？只输出一个精确数字，不要单位或说明。`,
-      answer: '30.375',
-    },
-    {
-      id: `${engine}-precision`,
-      engine,
-      question: `${prefix}id 为 1 的 huge 原始整数是什么？不能四舍五入或使用科学计数法，只输出完整整数。`,
-      answer: '9007199254740993',
-    },
-    {
-      id: `${engine}-ratio`,
-      engine,
-      question: `${prefix}A 类别的记录数是 B 类别记录数的多少倍？确保统计完整，不把截断的数据当成全量。只输出数字。`,
-      answer: '2',
-    },
-    ...(engine === 'mysql'
-      ? [
-          {
-            id: 'mysql-unicode',
-            engine,
-            question: `${prefix}id 为 1 的 note 原文是什么？只输出原文。`,
-            answer: '中文 fixture',
-          },
-        ]
-      : []),
-    ...(engine === 'postgresql'
-      ? [
-          {
-            id: 'postgresql-large-schema',
-            engine,
-            question:
-              '此库中有 500 个 catalog_fixture_ 开头的表。请定位编号 417 的表，读取结构并判断其主键列名。只输出列名。',
-            answer: 'id',
-          },
-        ]
-      : []),
-  ];
-});
-assert.equal(cases.length, 20);
+const cases = [
+  ...allEngines.flatMap((engine) => {
+    const where =
+      engine === 'oracle'
+        ? 'SYSTEM schema 下的 DSH_TEST_ITEMS 表'
+        : engine === 'mongodb'
+          ? 'dsh_test_items 集合'
+          : 'dsh_test_items 表';
+    const prefix = `使用此 ${engine} 连接，先发现并理解 ${where} 的结构，再读取需要的数据。`;
+    return [
+      {
+        id: `${engine}-sum`,
+        engine,
+        question: `${prefix}category 为 A 的记录中 amount 的总和是多少？只输出一个精确数字，不要单位或说明。`,
+        answer: '30.375',
+      },
+      {
+        id: `${engine}-precision`,
+        engine,
+        question: `${prefix}id 为 1 的 huge 原始整数是什么？不能四舍五入或使用科学计数法，只输出完整整数。`,
+        answer: '9007199254740993',
+      },
+      {
+        id: `${engine}-ratio`,
+        engine,
+        question: `${prefix}A 类别的记录数是 B 类别记录数的多少倍？确保统计完整，不把截断的数据当成全量。只输出数字。`,
+        answer: '2',
+      },
+      ...(engine === 'mysql'
+        ? [
+            {
+              id: 'mysql-unicode',
+              engine,
+              question: `${prefix}id 为 1 的 note 原文是什么？只输出原文。`,
+              answer: '中文 fixture',
+            },
+          ]
+        : []),
+      ...(engine === 'postgresql'
+        ? [
+            {
+              id: 'postgresql-large-schema',
+              engine,
+              question:
+                '此库中有 500 个 catalog_fixture_ 开头的表。请定位编号 417 的表，读取结构并判断其主键列名。只输出列名。',
+              answer: 'id',
+            },
+          ]
+        : []),
+    ];
+  }),
+  ...qualityCases,
+];
+assert.equal(cases.length, 25);
 type ReportRow = {
   id: string;
   engine: Engine;
@@ -120,6 +133,7 @@ type ReportRow = {
   durationMs: number;
   returnedModels: string[];
   failure?: string;
+  evidence?: import('./quality.js').QualityEvidence;
 };
 const rows: ReportRow[] = [];
 if (process.env.DSH_DATABASE_EVAL_RESUME === '1') {
@@ -127,7 +141,7 @@ if (process.env.DSH_DATABASE_EVAL_RESUME === '1') {
     const previous = JSON.parse(await readFile(output, 'utf8'));
     assert.equal(
       previous.caseHash,
-      createHash('sha256').update(JSON.stringify(cases)).digest('hex'),
+      createHash('sha256').update(JSON.stringify({ cases, qualitySeed })).digest('hex'),
     );
     assert.equal(previous.model, model);
     assert.equal(
@@ -168,7 +182,8 @@ const save = () =>
         thinking: 'disabled',
         maxCompletionTokens: 2048,
         repetitions,
-        caseHash: createHash('sha256').update(JSON.stringify(cases)).digest('hex'),
+        requestBudget: { limit: budget.limit, used: budget.used },
+        caseHash: createHash('sha256').update(JSON.stringify({ cases, qualitySeed })).digest('hex'),
         cases,
         rows,
       },
@@ -194,6 +209,17 @@ for (const engine of engines) {
           await sql('GRANT SELECT ON ALL TABLES IN SCHEMA public TO dsh_reader');
           await sql('COMMIT');
         });
+      if (engine === 'postgresql') {
+        await withSql(instance, true, async ({ sql }) => {
+          for (const statement of qualitySeed) await sql(statement);
+        });
+        const verifier = new QueryRunner(config(instance), async () => instance.password);
+        try {
+          await verifyQualityFixture((sql) => verifier.query(sql, instance.signal));
+        } finally {
+          await verifier.close();
+        }
+      }
       for (const variant of baseline ? ['baseline', 'candidate'] : ['candidate']) {
         const directory = await mkdtemp(join(tmpdir(), 'dsh-database-live-eval-'));
         const app = await harness(
@@ -269,9 +295,11 @@ for (const engine of engines) {
                 },
                 { role: 'user', content: task.question },
               ];
+              const observed = qualityEvidence();
               try {
                 for (let step = 0; step < 12; step++) {
                   instance.signal.throwIfAborted();
+                  budget.take();
                   const response = await fetch('https://api.deepseek.com/chat/completions', {
                     method: 'POST',
                     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
@@ -320,12 +348,17 @@ for (const engine of engines) {
                       signal: instance.signal,
                     });
                     if (value.isError) row.toolErrors++;
+                    observed.observe(
+                      JSON.parse(call.function.arguments).sql,
+                      value.isError,
+                      value.isError ? undefined : value.value,
+                    );
                     const content = JSON.stringify(value.isError ? value.content : value.value);
                     row.toolOutputBytes += Buffer.byteLength(content);
                     messages.push({ role: 'tool', tool_call_id: call.id, content });
                   }
                 }
-                row.passed = row.calls > 0 && row.answer === task.answer;
+                row.passed = gradeAnswer(task, row.answer, observed.evidence);
               } catch (error) {
                 row.failure =
                   error instanceof Error && /^MODEL_[A-Z_0-9]+$/.test(error.message)
@@ -333,12 +366,16 @@ for (const engine of engines) {
                     : 'EVALUATION_INTERRUPTED';
               }
               row.durationMs = Date.now() - started;
-              rows.push(row);
+              rows.push({ ...row, evidence: observed.evidence });
               await save();
               console.log(
                 `${variant} ${task.id} ${repetition}/3 ${row.passed ? 'PASS' : 'FAIL'} calls=${row.calls} errors=${row.toolErrors}`,
               );
-              if (row.failure?.startsWith('MODEL_HTTP_')) throw new Error(row.failure);
+              if (
+                row.failure === 'MODEL_BUDGET_EXHAUSTED' ||
+                row.failure?.startsWith('MODEL_HTTP_')
+              )
+                throw new Error(row.failure);
             }
         } finally {
           await app.close();

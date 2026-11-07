@@ -541,6 +541,19 @@ export function Manager({ onClose }: { onClose: () => void }) {
                 </p>
               )}
               {current && (
+                <p className="dshdb-field-help">
+                  开启后按已保存的授权生效：
+                  {(current.effectivePolicy ?? current.policy)?.access === 'sessions'
+                    ? '指定会话及其子 Agent'
+                    : '当前 DSH 的所有会话'}
+                  ，
+                  {(current.effectivePolicy ?? current.policy)?.mode === 'metadata'
+                    ? '仅结构发现'
+                    : '结构发现与只读查询'}
+                  。工具返回的结构与数据会进入对话，并可能发送给所选模型服务。请先确认数据库账户权限和模型服务设置；停用不能撤回已返回的数据。
+                </p>
+              )}
+              {current && (
                 <div className="dshdb-view-tabs" role="tablist" aria-label="连接详情">
                   {views.map((item, index) => (
                     <button
@@ -768,9 +781,16 @@ export function Manager({ onClose }: { onClose: () => void }) {
                         <details key={current.id} className="dshdb-tool-details">
                           <summary>如何在对话中使用</summary>
                           <p>
-                            在对话中说：“使用「{current.name}」查看有哪些
-                            {current.engine === 'mongodb' ? '集合' : '表'}。”
+                            开启访问后，在获授权的对话中说：“使用「{current.name}」查看有哪些
+                            {current.engine === 'mongodb' ? '集合' : '表'}
+                            ，先只查看结构，不读取业务行。”
                           </p>
+                          {current.effectivePolicy?.mode !== 'metadata' && (
+                            <p>
+                              确认结构后，再提出具体问题、时间范围和统计口径，优先让 Agent
+                              在数据库端汇总，只返回必要结果。
+                            </p>
+                          )}
                           <code>{current.inspectToolName}</code>
                           {current.effectivePolicy?.mode !== 'metadata' && (
                             <code>{current.toolName}</code>

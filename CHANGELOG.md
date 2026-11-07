@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3 — 2026-11-07
+
+- 修复 MySQL、MariaDB、PostgreSQL 和 MongoDB 对 IP SAN 的 TLS 身份校验，支持精确匹配 IPv4/IPv6；保留证书链校验，失败不降级明文。
+- 修复 PostgreSQL 从其他异步上下文取消查询时，客户端关闭与服务端终止证据归属错误的问题。
+- 收紧 PostgreSQL `dblink_*` 函数族的只读边界，在读取凭据与执行前拒绝远程会话及执行辅助函数。
+- 修复授权表单的活动会话发现和错误反馈，区分同一工作区中的会话，并保留已授权但未加载的会话。
+- 改善 SQL 对象名称、独立 schema/catalog 参数及 PostgreSQL 时区边界的结构发现提示。
+- 补充 Oracle IPv6 TCPS 的 Node 补丁要求，以及 SQL Server、Oracle 的真实 TLS 验证范围与限制。
+
 ## 0.1.2 — 2026-11-06
 
 - 支持 DSH 0.2.2-rc.1 使用的 Cordis 4.1 与 Schemastery 3.19，同时保留旧版宿主的依赖范围。

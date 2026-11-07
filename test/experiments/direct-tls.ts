@@ -18,6 +18,14 @@ export async function directTlsMatrix(directory: string, output: string) {
       ['wrong', 'localhost', true, false],
       ['expired', '127.0.0.1', true, false],
       ['dns', 'localhost', false, false],
+      ...([
+        ['matching', '::1', true, true],
+        ['ip', '::1', true, false],
+        ['dns', '::1', true, false],
+        ['wrong', '::1', true, false],
+        ['expired', '::1', true, false],
+        ['matching', '::1', false, false],
+      ] as const),
     ] as const) {
       const sockets = new Set<Socket>();
       let connections = 0;

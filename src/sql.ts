@@ -197,7 +197,8 @@ export function validateReadOnlySql(input: string, engine: Engine = 'mysql'): st
   )
     fail();
   const tokens: string[] = [];
-  const dangerous = /^(PG_|LO_|DBMS_|UTL_|XP_|SP_)/;
+  // dblink helpers can manage remote sessions or execute outside our read-only transaction.
+  const dangerous = /^(PG_|LO_|DBMS_|UTL_|XP_|SP_|DBLINK_)/;
   const quotedIdentifiers: { start: number; end: number }[] = [];
   const calls = new Set([
     'NEXTVAL',

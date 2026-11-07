@@ -7,6 +7,7 @@ import { MAX_RESULT_BYTES } from './result.js';
 import { engines } from './engines.js';
 import { metadataStatements } from './metadata-sql.js';
 import { jsonRecord, jsonValue } from './json-schema.js';
+import { postgresTimestampGuidance, sqlObjectNameGuidance } from './tool-guidance.js';
 export const MAX_METADATA_ROWS = 500;
 
 export const inspectInput = z
@@ -230,6 +231,25 @@ export class Inspector {
               ...(value.truncationReason ? { truncationReason: value.truncationReason } : {}),
               ...(columnOnly ? { note: 'Only columns with SELECT permission are included.' } : {}),
             };
+            if (
+              request.section === 'columns' &&
+              input.action === 'describe' &&
+              input.name?.includes('.') &&
+              !rows.length &&
+              !value.truncated
+            )
+              result.sections[request.section]!.note = sqlObjectNameGuidance;
+            if (this.config.engine === 'postgresql' && request.section === 'columns') {
+              const columns = result.sections.columns!;
+              const dataType = columns.columns.indexOf('data_type');
+              if (
+                dataType >= 0 &&
+                rows.some((row) =>
+                  /^timestamp(?:\(\d+\))? with time zone$/i.test(String(row[dataType])),
+                )
+              )
+                columns.note = [columns.note, postgresTimestampGuidance].filter(Boolean).join(' ');
+            }
             if (
               this.config.engine === 'mongodb' &&
               request.section === 'collection' &&

@@ -1,6 +1,9 @@
 import { stage, cancellation, driverClosed } from '../observability.js';
 import mysql from 'mysql2';
-import { connect, isIP } from 'node:net';
+import { isIP } from 'node:net';
+import { connect as connectTls } from 'node:tls';
+import type { Duplex } from 'node:stream';
+import { verifyServerIdentity } from './tls.js';
 import type { FieldPacket } from 'mysql2';
 import type { Adapter } from './types.js';
 import { abortable, networkHost, sqlStatement } from './types.js';
@@ -15,21 +18,6 @@ export const execute: Adapter = async (input, { config, password, signal, result
     password,
     database: config.database || undefined,
     ssl: config.tls ? { rejectUnauthorized: true, verifyIdentity: true } : undefined,
-    // mysql2 3.24.4 omits both TLS host and SNI for IP literals. Node then falls back to
-    // socket._host (otherwise "localhost"). Keep the actual IP for certificate checking,
-    // without sending an IP as SNI. This narrow Node 22/24 compatibility shim is covered
-    // by real TLS tests; never verify identity after sending database credentials.
-    ...(config.tls && isIP(host)
-      ? {
-          stream: () => {
-            const socket = connect({ host, port: config.port }) as ReturnType<typeof connect> & {
-              _host: string;
-            };
-            socket._host = host;
-            return socket;
-          },
-        }
-      : {}),
     connectTimeout: Math.min(config.timeoutMs, 10000),
     multipleStatements: false,
     rowsAsArray: true,
@@ -40,7 +28,52 @@ export const execute: Adapter = async (input, { config, password, signal, result
     charset: 'utf8mb4',
     flags: ['-LOCAL_FILES'],
   };
-  const connection = mysql.createConnection(options);
+  const createConnection = (connectTimeout = options.connectTimeout) => {
+    const connection = mysql.createConnection({ ...options, connectTimeout });
+    if (config.tls && isIP(host)) {
+      // mysql2 does not expose a TLS identity callback. Override only this
+      // connection's upgrade hook, before its greeting can arrive. DNS keeps the
+      // driver's normal path. No global TLS/driver state or session cache changes.
+      const client = connection as mysql.Connection & {
+        stream: Duplex;
+        startTLS: (done: (error?: Error) => void) => void;
+        packetParser: { execute: (data: Buffer) => void };
+        _handleNetworkError: (error: Error) => void;
+      };
+      if (typeof client.startTLS !== 'function' || !client.packetParser) {
+        connection.destroy();
+        throw new Error('Unsupported MySQL TLS upgrade interface.');
+      }
+      client.startTLS = (done) => {
+        client.stream.removeAllListeners('data');
+        let established = false;
+        let reported = false;
+        const secure = connectTls(
+          {
+            socket: client.stream,
+            rejectUnauthorized: true,
+            checkServerIdentity: (_host, cert) => verifyServerIdentity(host, cert),
+          },
+          () => {
+            established = true;
+            reported = true;
+            done();
+          },
+        );
+        secure.on('error', (error) => {
+          if (established) client._handleNetworkError(error);
+          else if (!reported) {
+            reported = true;
+            done(error);
+          }
+        });
+        secure.on('data', (data: Buffer) => client.packetParser.execute(data));
+        client.stream = secure;
+      };
+    }
+    return connection;
+  };
+  const connection = createConnection();
   connection.on('error', () => {});
   let stopping: Promise<void> | undefined;
   // Closing a client socket alone does not stop a running server query (for example SLEEP).
@@ -52,7 +85,7 @@ export const execute: Adapter = async (input, { config, password, signal, result
       let control: mysql.Connection | undefined;
       try {
         if (Number.isSafeInteger(id) && id! > 0) {
-          control = mysql.createConnection({ ...options, connectTimeout: 1000 });
+          control = createConnection(1000);
           control.on('error', () => {});
           await new Promise<void>((resolve) => {
             const timer = setTimeout(resolve, 1000);

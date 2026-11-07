@@ -1,6 +1,17 @@
 /** Shared model guidance for the MCP catalog and native Harness tools; never an access gate. */
+export const sqlObjectNameGuidance =
+  'For SQL, pass the literal object name in name and its schema/catalog separately; ' +
+  'e.g. name="orders", schema="sales". Dots in name are literal.';
+
+export const postgresTimestampGuidance =
+  'PostgreSQL timestamptz values are instants. Type local-date boundaries as timestamp WITHOUT time zone, ' +
+  'then apply AT TIME ZONE with the requested named zone to form boundary instants, including DST. ' +
+  'AT TIME ZONE on timestamptz instead returns a local timestamp WITHOUT time zone.';
+
 export const inspectGuidance =
   'Actions: capabilities, namespaces, search (object names), describe (one exact object). ' +
+  sqlObjectNameGuidance +
+  ' ' +
   'Search with a name filter; use namespaces when schema/catalog names are needed. ' +
   'Describe only relevant objects with unknown structure; reuse known metadata. ' +
   'Capabilities is optional when the needed operation and limits are already known. ' +

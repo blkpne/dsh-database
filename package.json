@@ -1,6 +1,6 @@
 {
   "name": "dsh-database",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "MIT",
   "description": "DeepSeek Harness database plugin with session-scoped access, schema discovery and read-only queries for MySQL, MariaDB, PostgreSQL, SQL Server, Oracle and MongoDB.",
   "type": "module",
@@ -53,6 +53,9 @@
     "test:docker": "node --import tsx test/docker/run.ts",
     "test:tls": "node --import tsx test/docker/tls.ts",
     "test:tls:protocol": "node --import tsx test/docker/tls.ts --protocol",
+    "test:tls:sqlserver": "node --import tsx test/docker/sqlserver-tls.ts",
+    "test:tls:oracle": "node --import tsx test/docker/oracle-tls.ts",
+    "test:oracle:runtime": "node --import tsx test/experiments/oracle-runtime.ts",
     "test:docker:cleanup": "node --import tsx test/docker/run.ts --cleanup",
     "test:agent": "node --import tsx test/evaluation/live.ts",
     "test:ablation": "node --import tsx test/experiments/ablation.ts",

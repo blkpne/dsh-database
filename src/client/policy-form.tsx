@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { Connection, Draft } from './model';
+import { loadSessionChoices, sessionLabel } from './session-choices';
+import type { SessionChoice } from './session-choices';
 
 export function PolicyForm({
   draft,
@@ -30,33 +32,29 @@ export function PolicyForm({
         : draft.policy.sessionIds.join('\n');
     });
   }, [draft.policy.sessionIds]);
-  const [scopes, setScopes] = useState<
-    { id: string; workspace?: string; createdAt?: number; child?: boolean }[]
-  >([]);
+  const [scopes, setScopes] = useState<SessionChoice[]>([]);
   const [scopeError, setScopeError] = useState('');
+  const [scopeLoading, setScopeLoading] = useState(false);
+  const [scopeRefresh, setScopeRefresh] = useState(0);
   useEffect(() => {
     if (!active || draft.policy.access !== 'sessions') return;
     const controller = new AbortController();
     setScopeError('');
-    void fetch('/api/dsh-database', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'scopes' }),
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
-    })
-      .then(async (response) => {
-        if (response.ok) {
-          const value = await response.json();
-          setScopes(value.scopes ?? []);
-        } else throw new Error('scopes unavailable');
+    setScopes([]);
+    setScopeLoading(true);
+    void loadSessionChoices(AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]))
+      .then((choices) => {
+        if (!controller.signal.aborted) setScopes(choices);
       })
       .catch(() => {
         if (!controller.signal.aborted)
-          setScopeError('活动会话读取失败，可重新展开访问规则重试，或填写已知会话 ID。');
+          setScopeError('活动会话读取失败，请刷新重试，或填写已知会话 ID。');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setScopeLoading(false);
       });
     return () => controller.abort();
-  }, [active, draft.policy.access]);
+  }, [active, draft.policy.access, scopeRefresh]);
   const set = (value: Partial<Draft['policy']>) => change('policy', { ...draft.policy, ...value });
   return (
     <fieldset className="dshdb-policy" disabled={disabled}>
@@ -95,6 +93,7 @@ export function PolicyForm({
             添加活动会话
             <select
               value=""
+              disabled={scopeLoading || scopes.length === 0}
               onChange={(e) => {
                 if (e.target.value) {
                   const sessionIds = [...new Set([...draft.policy.sessionIds, e.target.value])];
@@ -103,14 +102,30 @@ export function PolicyForm({
                 }
               }}
             >
-              <option value="">选择宿主中的活动会话</option>
+              <option value="">
+                {scopeLoading ? '正在读取活动会话…' : '选择宿主中的活动会话'}
+              </option>
               {scopes.map((scope) => (
                 <option key={scope.id} value={scope.id}>
-                  {`${scope.workspace ?? '未指定工作区'}${scope.child ? ' · 子 Agent' : ''}${scope.createdAt ? ` · ${new Date(scope.createdAt).toLocaleString()}` : ''} · ${scope.id}`}
+                  {sessionLabel(scope)}
                 </option>
               ))}
             </select>
           </label>
+          <button
+            type="button"
+            disabled={scopeLoading}
+            onClick={() => setScopeRefresh((value) => value + 1)}
+          >
+            刷新活动会话
+          </button>
+          <p className="dshdb-field-help" role="status">
+            {scopeLoading
+              ? '正在读取活动会话…'
+              : !scopeError && scopes.length === 0
+                ? '暂无活动会话。先在宿主中打开目标对话，再刷新；也可填写已知会话 ID。'
+                : '仅列出宿主当前已加载的活动会话，不是全部历史对话。新打开对话后请刷新。'}
+          </p>
           {scopeError && (
             <p role="alert" className="dshdb-field-help">
               {scopeError}
@@ -122,7 +137,16 @@ export function PolicyForm({
                 const scope = scopes.find((entry) => entry.id === id);
                 return (
                   <li key={id}>
-                    {scope?.workspace ?? '未加载或未指定工作区'} · {id}
+                    {scope ? sessionLabel(scope) : `未在活动列表中 · ${id}`}
+                    <button
+                      type="button"
+                      aria-label={`移除授权会话 ${id}`}
+                      onClick={() =>
+                        set({ sessionIds: draft.policy.sessionIds.filter((entry) => entry !== id) })
+                      }
+                    >
+                      移除
+                    </button>
                   </li>
                 );
               })}
@@ -146,7 +170,8 @@ export function PolicyForm({
             />
           </label>
           <p className="dshdb-field-help">
-            以宿主真实作用域判断继承。重启后相同会话 ID 保留授权；复制会话记录不会自动获得授权。
+            添加或移除会话后需保存才会生效。未出现在活动列表中不代表授权失效。以宿主真实作用域判断继承。重启后相同会话
+            ID 保留授权；复制会话记录不会自动获得授权。
           </p>
         </>
       )}

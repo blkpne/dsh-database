@@ -1,6 +1,8 @@
 import { stage, cancellation, driverClosed } from '../observability.js';
 import pg from 'pg';
-import { checkServerIdentity, type PeerCertificate } from 'node:tls';
+import { AsyncResource } from 'node:async_hooks';
+import type { PeerCertificate } from 'node:tls';
+import { verifyServerIdentity } from './tls.js';
 import type { Adapter } from './types.js';
 import { abortable, networkHost, sqlStatement } from './types.js';
 
@@ -19,7 +21,7 @@ export const execute: Adapter = async (input, { config, password, signal, result
       ? {
           rejectUnauthorized: true,
           checkServerIdentity: (_host: string, cert: PeerCertificate) =>
-            checkServerIdentity(identity, cert),
+            verifyServerIdentity(identity, cert),
         }
       : false,
     connectionTimeoutMillis: Math.min(config.timeoutMs, 10000),
@@ -41,27 +43,30 @@ export const execute: Adapter = async (input, { config, password, signal, result
   // Each execution owns this entire session. Terminate it rather than canceling only the
   // current statement: cancellation arriving between protocol messages can be discarded,
   // allowing an already-buffered Execute to start after the caller has canceled.
-  const stop = () =>
-    (stopping ??= (async () => {
-      if (pid !== undefined) {
-        const control = new pg.Client({
-          ...options,
-          connectionTimeoutMillis: 1000,
-          statement_timeout: 1000,
-          query_timeout: 1000,
-        });
-        control.on('error', () => {});
-        try {
-          await control.connect();
-          await control.query('SELECT pg_terminate_backend($1)', [pid]);
-        } catch {
-          /* The original server statement_timeout remains the fallback. */
-        } finally {
-          await control.end().catch(() => {});
+  // Abort listeners run in the aborting caller's context, not this execution's.
+  const stop = AsyncResource.bind(
+    () =>
+      (stopping ??= (async () => {
+        if (pid !== undefined) {
+          const control = new pg.Client({
+            ...options,
+            connectionTimeoutMillis: 1000,
+            statement_timeout: 1000,
+            query_timeout: 1000,
+          });
+          control.on('error', () => {});
+          try {
+            await control.connect();
+            await control.query('SELECT pg_terminate_backend($1)', [pid]);
+          } catch {
+            /* The original server statement_timeout remains the fallback. */
+          } finally {
+            await control.end().catch(() => {});
+          }
         }
-      }
-      await end();
-    })());
+        await end();
+      })()),
+  );
   try {
     await abortable(client.connect(), signal, () => {
       void stop();
@@ -104,12 +109,15 @@ export const execute: Adapter = async (input, { config, password, signal, result
             void stop().then(resolve, reject);
           }
         });
-        query.on('error', (error) => {
-          if (['57014', '57P01'].includes((error as { code?: string }).code ?? ''))
-            cancellation(true);
-          if (result.truncated) resolve();
-          else reject(error);
-        });
+        query.on(
+          'error',
+          AsyncResource.bind((error) => {
+            if (['57014', '57P01'].includes((error as { code?: string }).code ?? ''))
+              cancellation(true);
+            if (result.truncated) resolve();
+            else reject(error);
+          }),
+        );
         query.on('end', (metadata) => {
           if (!fields) result.fields(metadata.fields.map((f) => f.name));
           resolve();

@@ -110,6 +110,7 @@ export function safeError(error: unknown): { code: string; message: string } {
     '42501': '数据库账户权限不足。',
     '42601': 'SQL 语法错误，请使用当前数据库的 SQL 方言。',
     '42P01': '表不存在，请检查数据库、schema 和表名。',
+    '42703': '列不存在，请先使用 inspect 的 describe 操作核对字段名称，再修正查询。',
     '25006': '此语句不允许在只读事务中执行。',
     '57014': '查询已取消或达到数据库超时限制。',
     ELOGIN: '数据库拒绝登录，请检查账户及 SQL Server 身份验证设置。',
