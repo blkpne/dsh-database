@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.3 — 2026-11-07
+## 0.1.3 — 2026-11-09
 
 - 修复 MySQL、MariaDB、PostgreSQL 和 MongoDB 对 IP SAN 的 TLS 身份校验，支持精确匹配 IPv4/IPv6；保留证书链校验，失败不降级明文。
 - 修复 PostgreSQL 从其他异步上下文取消查询时，客户端关闭与服务端终止证据归属错误的问题。

@@ -6,13 +6,15 @@
 
 ## 宿主与平台
 
-### 0.1.3 候选验证
+### 0.1.3 验证记录
 
-2026-11-07，`0.1.3` 候选尚未发布。最低 DSH、Node.js 要求及依赖版本与 `0.1.2` 相同。
+`0.1.3` 的发布验证记录整理于 2026-11-09。最低 DSH、Node.js 要求及依赖版本与 `0.1.2` 相同。以下记录来自发布前的源码与本地 tarball 验证，不包含 npm registry 安装验收。
 
 macOS x64、Node.js 24.20.0 已完成基础检查、生产依赖审计，以及本地 `0.1.3` tarball 在 DSH `0.2.0-rc.2` 和 `0.2.2-rc.1` 下的独立安装、Host/MCP 调用、写入拒绝、持久化、卸载重载与 Client 工厂检查。Client 工厂检查不等于浏览器交互验收。
 
-版本准备未修改生产源码。同日修复候选在 macOS 完成的 65 例 TLS 协议检查、MySQL/MariaDB/PostgreSQL 真实 TLS 检查及 PostgreSQL 真实集成验证继续适用；Linux 上的 SQL Server/Oracle TLS 与在线模型补验见下文。本候选的跨平台 CI 结果以对应提交的 GitHub Actions 记录为准，不由历史 CI 或本地安装结果推定。
+2026-11-07 的修复候选在 macOS 完成的 65 例 TLS 协议检查、MySQL/MariaDB/PostgreSQL 真实 TLS 检查及 PostgreSQL 真实集成验证继续适用；Linux 上的 SQL Server/Oracle TLS 与在线模型补验见下文。
+
+同日的[候选提交 CI](https://github.com/blkpne/dsh-database/actions/runs/42378133765)已通过 Windows Node 22.19/24、macOS/Linux、最低与 latest 宿主兼容性、六库、TLS 和资源清理检查。本次发布文案收尾未修改生产源码或依赖；最终发布提交的跨平台结果以发布标签对应的 GitHub Actions 记录为准，不由历史 CI 或本地安装结果推定。
 
 ### 0.1.2 验证记录
 
