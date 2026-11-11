@@ -1,11 +1,11 @@
 import type { ConnectionFields } from './schema.js';
-import type { InspectInput, SqlStatement } from './inspect.js';
+import type { InspectInput, SqlStatement, MetadataRequest } from './inspect.js';
 
 /** Only fixed catalog templates enter this privileged path. Names are bound values, never SQL. */
 export function metadataStatements(
   config: ConnectionFields,
   input: InspectInput,
-): { section: string; statement?: SqlStatement }[] {
+): { section: string; statement?: SqlStatement | MetadataRequest }[] {
   const engine = config.engine;
   const mysql = engine === 'mysql' || engine === 'mariadb';
   const pg = engine === 'postgresql';
@@ -60,7 +60,7 @@ export function metadataStatements(
   }
   const name = input.name!;
   const schema = input.schema ?? (mysql ? (input.catalog ?? config.database) : '');
-  const requests: { section: string; statement?: SqlStatement }[] = [];
+  const requests: { section: string; statement?: SqlStatement | MetadataRequest }[] = [];
   const add = (section: string, text: string, values = [schema, name]) =>
     requests.push({ section, statement: q(text, values) });
   if (mysql) {
@@ -102,17 +102,10 @@ export function metadataStatements(
       'columns',
       `SELECT c.column_name AS name, c.data_type, c.data_length, c.data_precision, c.data_scale, c.nullable, c.data_default AS default_value, m.comments AS "comment" FROM all_tab_columns c LEFT JOIN all_col_comments m ON m.owner=c.owner AND m.table_name=c.table_name AND m.column_name=c.column_name WHERE c.owner=COALESCE(?,USER) AND c.table_name=? ORDER BY c.column_id`,
     );
-    // Bound catalog optimization work in these two fixed Oracle queries. Cold and warm
-    // comparisons cover equivalent results, composite keys and inaccessible tables;
-    // this public hint changes no permissions, result bounds or execution deadline.
-    add(
-      'keys',
-      `SELECT /*+ NO_QUERY_TRANSFORMATION */ c.constraint_name AS name, c.constraint_type AS type, col.column_name, col.position FROM all_constraints c JOIN all_cons_columns col ON col.owner=c.owner AND col.constraint_name=c.constraint_name AND col.table_name=c.table_name WHERE c.owner=COALESCE(?,USER) AND c.table_name=? AND c.constraint_type IN ('P','U') ORDER BY c.constraint_name,col.position`,
-    );
-    add(
-      'foreignKeys',
-      `SELECT /*+ NO_QUERY_TRANSFORMATION */ c.constraint_name AS name, col.column_name, col.position, c.r_owner AS target_schema, c.r_constraint_name AS target_constraint, r.table_name AS target_table, rc.column_name AS target_column FROM all_constraints c JOIN all_cons_columns col ON col.owner=c.owner AND col.constraint_name=c.constraint_name AND col.table_name=c.table_name LEFT JOIN all_constraints r ON r.owner=c.r_owner AND r.constraint_name=c.r_constraint_name LEFT JOIN all_cons_columns rc ON rc.owner=r.owner AND rc.constraint_name=r.constraint_name AND rc.table_name=r.table_name AND rc.position=col.position WHERE c.owner=COALESCE(?,USER) AND c.table_name=? AND c.constraint_type='R' ORDER BY c.constraint_name,col.position`,
-    );
+    // Each constraint section is assembled from bounded catalog reads in one
+    // adapter-owned read-only transaction; no arbitrary SQL enters this path.
+    for (const section of ['keys', 'foreignKeys'])
+      requests.push({ section, statement: { kind: 'metadata', input, section } });
     add(
       'indexes',
       `SELECT i.index_name AS name, i.uniqueness, c.column_name, c.column_position FROM all_indexes i JOIN all_ind_columns c ON c.index_owner=i.owner AND c.index_name=i.index_name WHERE i.table_owner=COALESCE(?,USER) AND i.table_name=? ORDER BY i.index_name,c.column_position`,

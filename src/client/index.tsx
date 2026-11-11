@@ -2,8 +2,10 @@ import React, { useSyncExternalStore } from 'react';
 import { Manager } from './manager';
 import css from './style.css';
 
-export const inject = ['slots'];
+export const inject = ['slots', 'layout'];
 interface ClientContext {
+  /** Public ILayout face, verified against dsh-client-ui-layout 0.2.0-rc.2. */
+  layout: { selectPanel(panelId: null): void };
   slots: {
     inject(name: string, callback: () => () => void): unknown;
     register(
@@ -60,7 +62,15 @@ export function apply(ctx: ClientContext) {
   }
   function Overlay() {
     const visible = useSyncExternalStore(subscribe, () => open);
-    return visible ? <Manager onClose={() => setOpen(false)} /> : null;
+    return visible ? (
+      <Manager
+        onClose={() => setOpen(false)}
+        onConversation={() => {
+          ctx.layout.selectPanel(null);
+          setOpen(false);
+        }}
+      />
+    ) : null;
   }
   ctx.effect(() => {
     const style = document.createElement('style');

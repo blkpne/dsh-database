@@ -54,13 +54,13 @@ DSH initializes the `web` Profile if needed. Open the login link printed in the 
 ### 3. Authorize your first query
 
 1. Open **数据库** (Database), create a connection, and enter the database address, database name, and a read-only account.
-2. Select **测试当前配置** (Test current configuration). Save after the test succeeds. See [TLS connections](docs/usage.md#tls-连接) if you use a private certificate authority.
+2. Select **测试连接** (Test connection). Save after the test succeeds. See [TLS connections](docs/usage.md#tls-连接) if you use a private certificate authority.
 3. In **授权规则** (Authorization rules), choose the session scope and capabilities, then save. Enable **Agent 访问** (Agent access).
-4. Ask in an authorized session, for example:
+4. Use **开始第一次只读对话** (Start your first read-only conversation) near the top of the saved connection to copy a starter question and return to the conversation. Paste, review, and send it yourself. For session-scoped access, choose an authorized session. Or ask your own question, for example:
 
 > Use the "Business analytics" connection to list the tables I can access. Inspect the relevant columns, count the orders, and explain which table you used.
 
-A successful connection test does not save the settings or enable agent access. Query results and analysis appear in the agent conversation. **调用记录** (Call records) shows status, duration, and errors.
+A successful connection test does not save the settings, enable agent access, or verify model readiness. Configure the model API key separately under **设置 → 模型** (Settings → Models). The starter action only copies the question and opens the conversation; it does not send it or replace an existing draft. Query results and analysis appear in the agent conversation. **调用记录** (Call records) shows status, duration, and errors.
 
 ## Access and data boundaries
 
@@ -68,7 +68,7 @@ A successful connection test does not save the settings or enable agent access. 
 - Schema-only authorization allows structural inspection without exposing the query tool. Call limits apply to both inspection and queries.
 - Database permissions determine which data is readable. Session authorization determines which sessions can use a connection; it does not replace database permissions or provide a SQL object allowlist.
 - Use read-only database accounts and views to restrict access. SQL Server's `readOnlyIntent` is a routing hint, not a write-permission boundary. SQL checks and read-only transactions do not make arbitrary database functions or extensions a safe sandbox.
-- Credentials are stored through DSH's credentials service. The default local provider uses permission-restricted files; the plugin does not promise encryption at rest. New connections enable TLS certificate and server-identity verification by default.
+- Credentials are stored through DSH's credentials service. The default local provider uses permission-restricted files; the plugin does not promise encryption at rest. New connections require an explicit transport choice in the Web form; TLS with certificate and hostname verification is recommended. Existing connection settings are preserved.
 - Query results enter the agent context and may be retained in host session records or sent to the configured model service. Plugin call records omitting business data does **not** mean that the host or model provider never processes or stores it. Return only the data needed, preferably aggregated in the database.
 - Disabling or deleting a connection cannot retract data already returned. Review the [data handling details](docs/usage.md#查询数据如何使用) before enabling access.
 

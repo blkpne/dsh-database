@@ -5,6 +5,7 @@ import type { Connection } from '../src/client/model.js';
 
 const connection: Connection = {
   ...emptyDraft(),
+  tls: true,
   id: '0123456789abcdef',
   revision: 1,
   name: 'Analytics',

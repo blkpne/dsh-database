@@ -555,3 +555,76 @@ test('PostgreSQL wire parsing preserves scalar and multidimensional array precis
     await runner.close();
   }
 });
+
+test('Oracle metadata cancellation owns an execute that returns a cursor after abort', async (t) => {
+  let release!: (value: unknown) => void;
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let lateClosed = 0;
+  let cursorClosed = 0;
+  let broken = 0;
+  t.mock.method(oracledb, 'getConnection', (async () => {
+    let late = false;
+    return {
+      callTimeout: 0,
+      async break() {
+        broken++;
+      },
+      async close() {
+        if (late) lateClosed++;
+      },
+      async execute(sql: string, _binds?: unknown, options?: unknown) {
+        if (!options) return {};
+        if (sql.includes('constraint_type IN')) {
+          late = true;
+          started();
+          return await new Promise((resolve) => {
+            release = resolve;
+          });
+        }
+        return {
+          metaData: [],
+          resultSet: {
+            async getRows() {
+              return [];
+            },
+            async close() {},
+          },
+        };
+      },
+    };
+  }) as any);
+  const runner = new QueryRunner(
+    connectionInput.parse({ ...base, engine: 'oracle', timeoutMs: 10000 }),
+    async () => 'fixture',
+  );
+  const pending = assert.rejects(runner.inspect({ action: 'describe', name: 'fixture' }), {
+    code: 'CANCELED',
+  });
+  await ready;
+  let stopped = false;
+  const stopping = runner.close().then(() => {
+    stopped = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(stopped, false);
+  assert.equal(lateClosed, 0);
+  release({
+    metaData: [],
+    resultSet: {
+      async getRows() {
+        throw new Error('late cursor must not be read');
+      },
+      async close() {
+        cursorClosed++;
+      },
+    },
+  });
+  await pending;
+  await stopping;
+  assert.equal(broken, 1);
+  assert.equal(cursorClosed, 1);
+  assert.equal(lateClosed, 1);
+});

@@ -84,6 +84,51 @@
   outline: 2px solid var(--db-accent, #3157c8);
   outline-offset: 3px;
 }
+.dshdb-required {
+  margin-left: 4px;
+  color: var(--db-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.dshdb-first-question {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--db-accent);
+  background: var(--db-soft);
+}
+.dshdb-first-question h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.dshdb-first-question textarea {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--db-line);
+  border-radius: 6px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+.dshdb-question-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.dshdb-question-actions .dshdb-button {
+  white-space: normal;
+}
+.dshdb-model-guidance {
+  margin: 10px 0 0;
+  color: var(--db-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
 .dshdb-sr-only {
   position: absolute;
   width: 1px;
@@ -293,6 +338,8 @@
 }
 .dshdb-editor {
   padding: 20px 28px 16px;
+}
+.dshdb-content {
   overflow: auto;
   flex: 1;
   min-height: 0;
@@ -648,6 +695,8 @@ body[data-ds-dark-theme] .dshdb-dialog {
   }
   .dshdb-editor {
     padding: 18px 16px 12px;
+  }
+  .dshdb-content {
     scrollbar-gutter: auto;
   }
   .dshdb-fields {
@@ -1016,4 +1065,129 @@ body[data-ds-dark-theme] .dshdb-dialog {
 }
 .dshdb-link:disabled {
   color: var(--db-muted);
+}
+
+/* Connection workflow: persistent actions and explicit credential / transport state. */
+.dshdb-field-heading {
+  margin: 8px 0 -4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--db-line);
+  font-size: 13px;
+  font-weight: 600;
+}
+.dshdb-security {
+  padding-top: 16px;
+  border-top: 1px solid var(--db-line);
+}
+.dshdb-security .dshdb-field-help {
+  display: block;
+  font-weight: 400;
+}
+.dshdb-delete {
+  margin-left: auto;
+}
+.dshdb-access-disclosure {
+  margin: 2px 0 4px;
+}
+.dshdb-access-disclosure > summary {
+  min-height: 30px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 12px;
+  color: var(--db-muted);
+}
+.dshdb-access-disclosure > p {
+  margin-bottom: 12px;
+}
+.dshdb-check-banner {
+  padding: 10px 12px;
+  margin: 0 0 12px;
+  border: 1px solid var(--db-line);
+  border-left: 3px solid currentColor;
+  border-radius: 6px;
+  background: var(--db-soft);
+  color: var(--db-muted);
+  overflow-wrap: anywhere;
+}
+.dshdb-check-banner strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.dshdb-check-banner p {
+  font-size: 12px;
+  margin: 3px 0 0;
+  color: var(--db-text);
+}
+.dshdb-check-banner.success {
+  color: var(--db-success);
+  background: color-mix(in srgb, var(--db-success) 7%, var(--db-bg));
+}
+.dshdb-check-banner.error {
+  color: var(--db-error);
+  background: color-mix(in srgb, var(--db-error) 6%, var(--db-bg));
+}
+.dshdb-check-banner.pending {
+  color: var(--db-accent);
+}
+.dshdb-test {
+  border-color: var(--db-accent);
+  color: var(--db-accent);
+  font-weight: 500;
+}
+.dshdb-confirm {
+  width: min(440px, calc(100vw - 40px));
+  padding: 24px;
+  border: 1px solid var(--db-line);
+  border-radius: 10px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  box-shadow: 0 16px 60px #17203333;
+}
+.dshdb-confirm::backdrop {
+  background: #17203366;
+}
+.dshdb-confirm h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.dshdb-confirm .dshdb-button.danger {
+  background: var(--db-error);
+  color: var(--db-bg);
+}
+@media (max-width: 680px) {
+  .dshdb-footer-content {
+    gap: 8px;
+  }
+  .dshdb-detail-heading {
+    gap: 10px;
+  }
+  .dshdb-access-control {
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+  .dshdb-access-control > div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dshdb-actions {
+    justify-content: space-between;
+  }
+  .dshdb-actions .dshdb-reset {
+    margin-right: 0;
+    order: -1;
+  }
+}
+@media (max-width: 480px) {
+  .dshdb-password-field,
+  .dshdb-user {
+    grid-column: 1 / -1;
+  }
+  .dshdb-check-banner {
+    padding: 8px 10px;
+    margin-bottom: 8px;
+  }
+  .dshdb-actions .dshdb-button {
+    padding-inline: 10px;
+  }
 }

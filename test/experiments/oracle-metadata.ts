@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { temporaryDirectory } from '../../scripts/paths.mjs';
 import { metadataStatements } from '../../src/metadata-sql.js';
+import type { SqlStatement } from '../../src/inspect.js';
+
+// Historical join templates retained only for controlled comparison, never production.
+const legacy: Record<string, string> = {
+  keys: "SELECT /*+ NO_QUERY_TRANSFORMATION */ c.constraint_name AS name, c.constraint_type AS type, col.column_name, col.position FROM all_constraints c JOIN all_cons_columns col ON col.owner=c.owner AND col.constraint_name=c.constraint_name AND col.table_name=c.table_name WHERE c.owner=COALESCE(:1,USER) AND c.table_name=:2 AND c.constraint_type IN ('P','U') ORDER BY c.constraint_name,col.position",
+  foreignKeys:
+    "SELECT /*+ NO_QUERY_TRANSFORMATION */ c.constraint_name AS name, col.column_name, col.position, c.r_owner AS target_schema, c.r_constraint_name AS target_constraint, r.table_name AS target_table, rc.column_name AS target_column FROM all_constraints c JOIN all_cons_columns col ON col.owner=c.owner AND col.constraint_name=c.constraint_name AND col.table_name=c.table_name LEFT JOIN all_constraints r ON r.owner=c.r_owner AND r.constraint_name=c.r_constraint_name LEFT JOIN all_cons_columns rc ON rc.owner=r.owner AND rc.constraint_name=r.constraint_name AND rc.table_name=r.table_name AND rc.position=col.position WHERE c.owner=COALESCE(:1,USER) AND c.table_name=:2 AND c.constraint_type='R' ORDER BY c.constraint_name,col.position",
+};
 import { inspectInput } from '../../src/inspect.js';
 import { loadAdapter } from '../../src/query.js';
 import { ResultCollector } from '../../src/result.js';
@@ -40,8 +48,8 @@ try {
     for (let round = 0; round < 2; round++) {
       const order =
         round === 0
-          ? ['no_transform', 'baseline', 'predicates', 'no_merge', 'both']
-          : ['both', 'no_merge', 'predicates', 'baseline', 'no_transform'];
+          ? ['split', 'no_transform', 'baseline', 'predicates', 'no_merge', 'both']
+          : ['both', 'no_merge', 'predicates', 'baseline', 'no_transform', 'split'];
       for (const variant of order)
         for (const name of ['DSH_TEST_ITEMS', 'DSH_EXP_CHILD', 'DSH_EXP_HIDDEN']) {
           const statements = metadataStatements(
@@ -51,7 +59,11 @@ try {
           for (const { section, statement } of statements.filter((s) =>
             ['keys', 'foreignKeys'].includes(s.section),
           )) {
-            const query = structuredClone(statement!);
+            const query: SqlStatement = {
+              kind: 'sql',
+              text: legacy[section]!,
+              values: ['SYSTEM', name],
+            };
             assert(query.text.startsWith('SELECT /*+ NO_QUERY_TRANSFORMATION */'));
             query.text = query.text.replace('/*+ NO_QUERY_TRANSFORMATION */ ', '');
             if (variant === 'no_transform')
@@ -71,7 +83,7 @@ try {
             query.text += ` /* dsh_catalog_comparison_round_${round} */`;
             const result = new ResultCollector(500);
             const started = performance.now();
-            await adapter(query, {
+            await adapter(variant === 'split' ? statement! : query, {
               config: settings,
               password: instance.password,
               signal: AbortSignal.any([instance.signal, AbortSignal.timeout(60000)]),

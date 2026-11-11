@@ -95,7 +95,7 @@ export class ResultCollector {
   rows: QueryResult['rows'] = [];
   truncated = false;
   truncationReason?: Reason;
-  private truncate(reason: Reason): void {
+  truncate(reason: Reason): void {
     this.truncated = true;
     this.truncationReason ??= reason;
   }

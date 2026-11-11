@@ -285,6 +285,7 @@ test('type switching adjusts defaults without overwriting a custom port', () => 
   assert.equal(
     toDraft({
       ...emptyDraft(),
+      tls: true,
       id: 'x',
       revision: 1,
       enabled: false,

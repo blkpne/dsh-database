@@ -4,7 +4,9 @@ import { Activity } from './activity';
 import { CallDetails, outcome } from './call-record';
 import type { Observatory, Trace } from '../observability.js';
 import { safeError } from '../errors.js';
+import { ConnectionProbe } from './probe';
 import { ConnectionForm } from './connection-form';
+import { FirstQuestionGuide } from './first-question-guide';
 import {
   emptyDraft,
   hasChanges,
@@ -12,6 +14,9 @@ import {
   toDraft,
   switchEngine,
   savedConnection,
+  connectionPayload,
+  changePasswordMode,
+  securityLabel,
 } from './model';
 import type { Connection, Draft, SaveResponse } from './model';
 import { engines } from '../engines.js';
@@ -19,7 +24,11 @@ import type { Engine } from '../engines.js';
 
 type View = 'settings' | 'activity';
 type Check = 'test' | 'diagnose';
-type CheckResult = { text: string; error: boolean; trace?: Trace };
+type CheckResult = {
+  text: string;
+  state: 'success' | 'error' | 'stale' | 'canceled';
+  trace?: Trace;
+};
 type Snapshot = ReturnType<Observatory['snapshot']>;
 const views = [
   { id: 'settings', label: '连接设置' },
@@ -37,16 +46,22 @@ class ApiFailure extends Error {
   }
 }
 
-export function Manager({ onClose }: { onClose: () => void }) {
+export function Manager({
+  onClose,
+  onConversation,
+}: {
+  onClose: () => void;
+  onConversation: () => void;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const checkHeading = useRef<HTMLHeadingElement>(null);
+  const confirmDialog = useRef<HTMLDialogElement>(null);
   const accessHeading = useRef<HTMLHeadingElement>(null);
   const controller = useRef(new AbortController());
   const activeOperation = useRef(false);
-  const probe = useRef<AbortController>();
+  const probe = useRef(new ConnectionProbe());
   const [checking, setChecking] = useState<Check>();
   const [checkResult, setCheckResult] = useState<CheckResult>();
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -81,6 +96,7 @@ export function Manager({ onClose }: { onClose: () => void }) {
         if (!lifecycle.signal.aborted) setBusy('');
       });
     return () => {
+      probe.current.cancel();
       lifecycle.abort();
       if (previousFocus instanceof HTMLElement) previousFocus.focus();
     };
@@ -89,9 +105,12 @@ export function Manager({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!confirmation) return;
     const previousFocus = document.activeElement;
+    confirmDialog.current?.showModal();
     cancel.current?.focus();
     return () => {
+      confirmDialog.current?.close();
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+      else form.current?.querySelector('input')?.focus();
     };
   }, [confirmation]);
 
@@ -186,8 +205,8 @@ export function Manager({ onClose }: { onClose: () => void }) {
     scroller.current?.scrollTo({ top: 0 });
   }
 
-  function focusSection(section: 'checks' | 'access') {
-    const heading = (section === 'checks' ? checkHeading : accessHeading).current;
+  function focusSection() {
+    const heading = accessHeading.current;
     heading?.scrollIntoView({ block: 'start' });
     heading?.focus({ preventScroll: true });
   }
@@ -213,26 +232,37 @@ export function Manager({ onClose }: { onClose: () => void }) {
   }
 
   function change<K extends keyof Draft>(key: K, value: Draft[K]) {
-    setCheckResult(undefined);
+    const interrupted = probe.current.cancel();
+    setChecking(undefined);
+    setCheckResult((result) =>
+      result || interrupted
+        ? {
+            state: 'stale',
+            text: '配置已更改，请重新测试。',
+          }
+        : undefined,
+    );
     setAccessNotice(undefined);
     setDraft((d) =>
-      key === 'engine'
-        ? switchEngine(d, value as Engine)
-        : key === 'mongoSrv' && value
-          ? { ...d, mongoSrv: true, port: 27017, tls: true }
-          : { ...d, [key]: value },
+      key === 'passwordMode'
+        ? changePasswordMode(d, value as Draft['passwordMode'])
+        : key === 'engine'
+          ? switchEngine(d, value as Engine)
+          : key === 'mongoSrv' && value
+            ? { ...d, mongoSrv: true, port: 27017, tls: true }
+            : { ...d, [key]: value },
     );
     setNotice(undefined);
   }
 
   function save() {
-    if (locked || (current && !dirty)) return;
+    if (locked || checking || (current && !dirty)) return;
     void act(
       '正在保存连接…',
       async () => {
         const data = await request<SaveResponse>({
           action: 'save',
-          connection: draft,
+          connection: connectionPayload(draft),
           id: selected,
           revision: current?.revision,
         });
@@ -253,22 +283,20 @@ export function Manager({ onClose }: { onClose: () => void }) {
   }
 
   function cancelCheck(showResult = true) {
-    if (!probe.current) return;
-    probe.current.abort();
-    probe.current = undefined;
-    if (showResult && checking)
+    if (!probe.current.cancel()) return;
+    if (showResult)
       setCheckResult({
-        error: false,
+        state: 'canceled',
         text: '已取消等待结果；服务端会处理取消，尚未确认执行是否已停止。',
       });
     setChecking(undefined);
   }
 
   async function runCheck(kind: Check) {
-    if (locked || probe.current) return;
+    if (locked || activeOperation.current) return;
     if (kind === 'diagnose' ? !current || dirty : !form.current?.reportValidity()) return;
-    const own = new AbortController();
-    probe.current = own;
+    const own = probe.current.start();
+    if (!own) return;
     setChecking(kind);
     setCheckResult(undefined);
     try {
@@ -277,7 +305,7 @@ export function Manager({ onClose }: { onClose: () => void }) {
           { action: 'diagnose', id: current.id, revision: current.revision },
           own.signal,
         );
-        if (probe.current !== own || controller.current.signal.aborted) return;
+        if (!probe.current.owns(own) || controller.current.signal.aborted) return;
         const trace = data.trace;
         if (
           !trace ||
@@ -288,7 +316,7 @@ export function Manager({ onClose }: { onClose: () => void }) {
         )
           throw new Error('未收到本次诊断的完整结果，请到调用记录核对。');
         setCheckResult({
-          error: trace.outcome !== 'success',
+          state: trace.outcome === 'success' ? 'success' : 'error',
           trace,
           text:
             trace.outcome === 'success'
@@ -297,26 +325,25 @@ export function Manager({ onClose }: { onClose: () => void }) {
         });
       } else {
         const data = await request<{ result: { rows: unknown[][] } }>(
-          { action: 'test', connection: draft, id: selected },
+          { action: 'test', connection: connectionPayload(draft), id: selected },
           own.signal,
         );
-        if (probe.current !== own || controller.current.signal.aborted) return;
+        if (!probe.current.owns(own) || controller.current.signal.aborted) return;
         if (!Array.isArray(data.result?.rows))
           throw new Error('未收到完整的连接测试结果，请重试。');
         setCheckResult({
-          error: false,
-          text: `连接测试通过：当前填写的配置可连接并执行探测查询。${dirty || !current ? '配置尚未保存。' : ''}测试不代表所有业务表均可访问。`,
+          state: 'success',
+          text: `当前配置可连接，探测查询成功。${dirty || !current ? '保存后生效。' : ''}不代表所有业务表均可访问。`,
         });
       }
     } catch (error) {
-      if (probe.current === own && !controller.current.signal.aborted)
+      if (probe.current.owns(own) && !controller.current.signal.aborted)
         setCheckResult({
-          error: true,
+          state: 'error',
           text: error instanceof Error ? error.message : '连接检查失败，请重试。',
         });
     } finally {
-      if (probe.current === own) {
-        probe.current = undefined;
+      if (probe.current.finish(own)) {
         setChecking(undefined);
       }
     }
@@ -348,7 +375,7 @@ export function Manager({ onClose }: { onClose: () => void }) {
   }
 
   function remove() {
-    if (!current) return;
+    if (!current || activeOperation.current) return;
     void act(
       '正在删除连接…',
       async () => {
@@ -474,7 +501,7 @@ export function Manager({ onClose }: { onClose: () => void }) {
               <p className="dshdb-empty">
                 还没有连接
                 <br />
-                填写右侧配置，添加第一个数据库。
+                新建连接后，可测试并保存。
               </p>
             )}
           </nav>
@@ -491,349 +518,312 @@ export function Manager({ onClose }: { onClose: () => void }) {
           </div>
         </aside>
         <main className="dshdb-main" aria-busy={!!busy}>
-          {loaded && (
-            <div className="dshdb-context">
-              <div className="dshdb-detail-heading">
-                <div>
-                  <h2>{current?.name ?? '新建连接'}</h2>
-                  <p>{engines[draft.engine].label}</p>
-                </div>
-                {current && (
-                  <div className="dshdb-access-control">
-                    <div>
-                      <span className="dshdb-access-label">Agent 访问</span>
-                      <span className="dshdb-access-status" id="dshdb-access-status">
-                        <i className={`dshdb-dot ${current.status}`} aria-hidden="true" />
-                        {statusLabel(current.status)}
-                      </span>
-                    </div>
+          <div ref={scroller} className="dshdb-content">
+            {loaded && (
+              <div className="dshdb-context">
+                <div className="dshdb-detail-heading">
+                  <div>
+                    <h2>{current?.name ?? '新建连接'}</h2>
+                    <p>
+                      {engines[draft.engine].label} · {securityLabel(draft.tls)}
+                    </p>
+                  </div>
+                  {current && (
                     <button
                       type="button"
-                      role="switch"
-                      aria-label="Agent 访问"
-                      aria-describedby="dshdb-access-status dshdb-tool-help"
-                      aria-checked={current.enabled}
-                      className="dshdb-switch"
-                      disabled={locked || (dirty && !current.enabled)}
-                      onClick={toggle}
+                      className="dshdb-button danger dshdb-delete"
+                      disabled={locked}
+                      onClick={() => {
+                        cancelCheck();
+                        setConfirmation({ kind: 'delete' });
+                      }}
                     >
-                      <span />
+                      删除连接
                     </button>
+                  )}
+                  {current && (
+                    <div className="dshdb-access-control">
+                      <div>
+                        <span className="dshdb-access-label">Agent 访问</span>
+                        <span className="dshdb-access-status" id="dshdb-access-status">
+                          <i className={`dshdb-dot ${current.status}`} aria-hidden="true" />
+                          {statusLabel(current.status)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-label="Agent 访问"
+                        aria-describedby="dshdb-access-status dshdb-tool-help"
+                        aria-checked={current.enabled}
+                        className="dshdb-switch"
+                        disabled={locked || (dirty && !current.enabled)}
+                        onClick={toggle}
+                      >
+                        <span />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {current && (
+                  <p
+                    id="dshdb-tool-help"
+                    className={`dshdb-access-help ${accessError ? 'error' : ''}`}
+                    role={accessError ? 'alert' : 'status'}
+                    aria-atomic="true"
+                  >
+                    {changingAccess
+                      ? busy
+                      : (accessNotice?.error && accessNotice.text) ||
+                        current.error ||
+                        (dirty
+                          ? current.enabled
+                            ? '修改尚未保存；Agent 仍使用已保存的配置，可随时关闭访问。'
+                            : '请先保存或取消修改，再开启访问。'
+                          : accessNotice?.text || '开关立即生效，使用已保存的配置与授权。')}
+                  </p>
+                )}
+                {current && (
+                  <FirstQuestionGuide
+                    key={current.id}
+                    connection={current}
+                    connections={connections}
+                    dirty={dirty}
+                    disabled={locked || !!checking}
+                    onConversation={onConversation}
+                  />
+                )}
+                {current && (
+                  <details className="dshdb-access-disclosure">
+                    <summary>访问范围与数据使用</summary>
+                    <p className="dshdb-field-help">
+                      开启后按已保存的授权生效：
+                      {(current.effectivePolicy ?? current.policy)?.access === 'sessions'
+                        ? '指定会话及其子 Agent'
+                        : '当前 DSH 的所有会话'}
+                      ，
+                      {(current.effectivePolicy ?? current.policy)?.mode === 'metadata'
+                        ? '仅结构发现'
+                        : '结构发现与只读查询'}
+                      。工具返回的结构与数据会进入对话，并可能发送给所选模型服务。请先确认数据库账户权限和模型服务设置；停用不能撤回已返回的数据。
+                    </p>
+                  </details>
+                )}
+                {current && (
+                  <div className="dshdb-view-tabs" role="tablist" aria-label="连接详情">
+                    {views.map((item, index) => (
+                      <button
+                        key={item.id}
+                        ref={(element) => {
+                          tabButtons.current[index] = element;
+                        }}
+                        type="button"
+                        role="tab"
+                        id={`dshdb-tab-${item.id}`}
+                        aria-controls={`dshdb-panel-${item.id}`}
+                        aria-selected={view === item.id}
+                        tabIndex={view === item.id ? 0 : -1}
+                        disabled={locked}
+                        onClick={() => switchView(item.id)}
+                        onKeyDown={(event) => {
+                          const next =
+                            event.key === 'Home'
+                              ? 0
+                              : event.key === 'End'
+                                ? views.length - 1
+                                : event.key === 'ArrowRight'
+                                  ? (index + 1) % views.length
+                                  : event.key === 'ArrowLeft'
+                                    ? (index + views.length - 1) % views.length
+                                    : undefined;
+                          if (next === undefined) return;
+                          event.preventDefault();
+                          switchView(views[next]!.id);
+                          tabButtons.current[next]?.focus();
+                        }}
+                      >
+                        {item.label}
+                        {item.id === 'settings' && dirty && (
+                          <span className="dshdb-draft-dot" aria-label="有未保存的修改" />
+                        )}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
-              {current && (
-                <p
-                  id="dshdb-tool-help"
-                  className={`dshdb-access-help ${accessError ? 'error' : ''}`}
-                  role={accessError ? 'alert' : 'status'}
-                  aria-atomic="true"
-                >
-                  {changingAccess
-                    ? busy
-                    : (accessNotice?.error && accessNotice.text) ||
-                      current.error ||
-                      (dirty
-                        ? current.enabled
-                          ? '修改尚未保存；Agent 仍使用已保存的配置，可随时关闭访问。'
-                          : '请先保存或取消修改，再开启访问。'
-                        : accessNotice?.text || '开关立即生效，使用已保存的配置与授权。')}
-                </p>
-              )}
-              {current && (
-                <p className="dshdb-field-help">
-                  开启后按已保存的授权生效：
-                  {(current.effectivePolicy ?? current.policy)?.access === 'sessions'
-                    ? '指定会话及其子 Agent'
-                    : '当前 DSH 的所有会话'}
-                  ，
-                  {(current.effectivePolicy ?? current.policy)?.mode === 'metadata'
-                    ? '仅结构发现'
-                    : '结构发现与只读查询'}
-                  。工具返回的结构与数据会进入对话，并可能发送给所选模型服务。请先确认数据库账户权限和模型服务设置；停用不能撤回已返回的数据。
-                </p>
-              )}
-              {current && (
-                <div className="dshdb-view-tabs" role="tablist" aria-label="连接详情">
-                  {views.map((item, index) => (
-                    <button
-                      key={item.id}
-                      ref={(element) => {
-                        tabButtons.current[index] = element;
-                      }}
-                      type="button"
-                      role="tab"
-                      id={`dshdb-tab-${item.id}`}
-                      aria-controls={`dshdb-panel-${item.id}`}
-                      aria-selected={view === item.id}
-                      tabIndex={view === item.id ? 0 : -1}
-                      disabled={locked}
-                      onClick={() => switchView(item.id)}
-                      onKeyDown={(event) => {
-                        const next =
-                          event.key === 'Home'
-                            ? 0
-                            : event.key === 'End'
-                              ? views.length - 1
-                              : event.key === 'ArrowRight'
-                                ? (index + 1) % views.length
-                                : event.key === 'ArrowLeft'
-                                  ? (index + views.length - 1) % views.length
-                                  : undefined;
-                        if (next === undefined) return;
-                        event.preventDefault();
-                        switchView(views[next]!.id);
-                        tabButtons.current[next]?.focus();
-                      }}
-                    >
-                      {item.label}
-                      {item.id === 'settings' && dirty && (
-                        <span className="dshdb-draft-dot" aria-label="有未保存的修改" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <div ref={scroller} className="dshdb-editor">
-            {!loaded ? (
-              <p className="dshdb-loading">{busy || '连接列表未加载，请刷新列表重试。'}</p>
-            ) : (
-              <>
-                <div
-                  role={current ? 'tabpanel' : undefined}
-                  id="dshdb-panel-settings"
-                  aria-labelledby={current ? 'dshdb-tab-settings' : undefined}
-                  hidden={view !== 'settings'}
-                >
-                  <form
-                    ref={form}
-                    id="dshdb-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      save();
-                    }}
-                    onInvalidCapture={(event) => {
-                      let parent = (event.target as HTMLElement).parentElement;
-                      while (parent && parent !== form.current) {
-                        if (parent instanceof HTMLDetailsElement) parent.open = true;
-                        parent = parent.parentElement;
-                      }
-                    }}
+            )}
+            <div className="dshdb-editor">
+              {!loaded ? (
+                <p className="dshdb-loading">{busy || '连接列表未加载，请刷新列表重试。'}</p>
+              ) : (
+                <>
+                  <div
+                    role={current ? 'tabpanel' : undefined}
+                    id="dshdb-panel-settings"
+                    aria-labelledby={current ? 'dshdb-tab-settings' : undefined}
+                    hidden={view !== 'settings'}
                   >
-                    <section
-                      className="dshdb-settings-section"
-                      aria-labelledby="dshdb-connection-heading"
+                    <form
+                      ref={form}
+                      id="dshdb-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        save();
+                      }}
+                      onInvalidCapture={(event) => {
+                        let parent = (event.target as HTMLElement).parentElement;
+                        while (parent && parent !== form.current) {
+                          if (parent instanceof HTMLDetailsElement) parent.open = true;
+                          parent = parent.parentElement;
+                        }
+                      }}
                     >
-                      <div className="dshdb-settings-heading">
-                        <h3 id="dshdb-connection-heading">连接信息</h3>
-                        <nav className="dshdb-section-links" aria-label="设置页内导航">
-                          <button
-                            type="button"
-                            className="dshdb-text-button dshdb-link"
-                            disabled={locked}
-                            onClick={() => focusSection('checks')}
-                          >
-                            连接检查
-                          </button>
-                          <button
-                            type="button"
-                            className="dshdb-text-button dshdb-link"
-                            disabled={locked}
-                            onClick={() => focusSection('access')}
-                          >
-                            授权规则
-                          </button>
-                        </nav>
-                      </div>
-                      {!current && (
-                        <p className="dshdb-field-help">
-                          填写基本信息即可保存，也可先测试。保存后再开启 Agent 访问。
-                        </p>
-                      )}
-                      <ConnectionForm
-                        key={selected ?? 'new'}
-                        draft={draft}
-                        current={current}
-                        disabled={locked || !!checking}
-                        change={change}
-                      />
-                    </section>
-                    <section
-                      className="dshdb-settings-section dshdb-checks"
-                      aria-labelledby="dshdb-check-heading"
-                    >
-                      <h3 id="dshdb-check-heading" ref={checkHeading} tabIndex={-1}>
-                        连接检查
-                      </h3>
-                      <div className="dshdb-check-options">
-                        <div>
-                          <button
-                            type="button"
-                            className="dshdb-button"
-                            disabled={locked || !!checking}
-                            onClick={() => void runCheck('test')}
-                          >
-                            测试当前配置
-                          </button>
-                          <p className="dshdb-field-help">
-                            使用当前填写的信息，检查能否连接；不会保存或开启访问。
-                          </p>
-                        </div>
-                        {current && (
-                          <div>
+                      <section
+                        className="dshdb-settings-section"
+                        aria-labelledby="dshdb-connection-heading"
+                      >
+                        <div className="dshdb-settings-heading">
+                          <h3 id="dshdb-connection-heading">连接信息</h3>
+                          <nav className="dshdb-section-links" aria-label="设置页内导航">
                             <button
                               type="button"
                               className="dshdb-text-button dshdb-link"
-                              disabled={locked || dirty || !!checking}
-                              onClick={() => void runCheck('diagnose')}
+                              disabled={locked}
+                              onClick={() => void runCheck('test')}
                             >
-                              诊断已保存连接
+                              测试连接
                             </button>
-                            <p className="dshdb-field-help">
-                              使用已保存的信息，进一步排查连接和结构访问权限。
-                              {dirty ? '请先保存或取消修改。' : ''}
-                            </p>
-                          </div>
+                            <button
+                              type="button"
+                              className="dshdb-text-button dshdb-link"
+                              disabled={locked}
+                              onClick={focusSection}
+                            >
+                              授权规则
+                            </button>
+                          </nav>
+                        </div>
+                        {!current && (
+                          <p className="dshdb-field-help">
+                            请准备地址、端口、数据库名和只读账户，并确认服务是否启用 TLS。
+                            标注“必填”的项目不能留空，密码按认证要求填写。保存后 Agent
+                            访问默认关闭。
+                          </p>
                         )}
-                      </div>
-                      {checking && (
-                        <div className="dshdb-check-progress" role="status">
-                          <span>
-                            {checking === 'test' ? '正在测试当前配置…' : '正在诊断已保存连接…'}
-                          </span>
+                        <ConnectionForm
+                          key={selected ?? 'new'}
+                          draft={draft}
+                          current={current}
+                          disabled={locked}
+                          change={change}
+                        />
+                      </section>
+                      {current && (
+                        <section
+                          className="dshdb-settings-section dshdb-checks"
+                          aria-label="连接诊断"
+                        >
                           <button
                             type="button"
-                            className="dshdb-text-button"
-                            onClick={() => cancelCheck()}
+                            className="dshdb-text-button dshdb-link"
+                            disabled={locked || dirty || !!checking}
+                            onClick={() => void runCheck('diagnose')}
                           >
-                            取消{checking === 'test' ? '测试' : '诊断'}
+                            诊断已保存连接
                           </button>
-                        </div>
-                      )}
-                      {checkResult && (
-                        <div className={`dshdb-check-result ${checkResult.error ? 'error' : ''}`}>
-                          <p role={checkResult.error ? 'alert' : 'status'}>{checkResult.text}</p>
-                          {checkResult.trace && (
+                          <p className="dshdb-field-help">
+                            进一步检查结构访问权限。
+                            {dirty ? '请先保存或取消修改。' : '不修改配置或授权。'}
+                          </p>
+                          {checkResult?.trace && (
                             <details className="dshdb-trace">
                               <summary>诊断详情</summary>
                               <CallDetails record={checkResult.trace} />
                             </details>
                           )}
-                          {current && (
-                            <button
-                              type="button"
-                              className="dshdb-text-button dshdb-link"
-                              disabled={locked}
-                              onClick={() => switchView('activity')}
-                            >
-                              查看调用记录
-                            </button>
-                          )}
-                        </div>
+                        </section>
                       )}
-                    </section>
-                    <section
-                      className="dshdb-settings-section dshdb-access"
-                      aria-labelledby="dshdb-access-heading"
-                    >
-                      <h3 id="dshdb-access-heading" ref={accessHeading} tabIndex={-1}>
-                        授权规则
-                      </h3>
-                      {!current && (
-                        <p className="dshdb-field-help">保存后可开启 Agent 访问，默认关闭。</p>
-                      )}
-                      <p className="dshdb-field-help" id="dshdb-access-scope">
-                        {current ? '已保存的授权：' : '待保存的授权：'}
-                        {(current?.effectivePolicy ?? draft.policy).access === 'sessions'
-                          ? '指定会话及其子 Agent'
-                          : '当前 DSH 的所有会话'}
-                        ，
-                        {(current?.effectivePolicy ?? draft.policy).mode === 'metadata'
-                          ? '仅查看结构'
-                          : '结构发现与只读查询'}
-                        。
-                        {current && dirty
-                          ? current.enabled
-                            ? '修改保存前仍按已保存的配置运行，可随时停用。'
-                            : '请先保存或取消修改，再开启访问。'
-                          : ''}
-                      </p>
-                      <details
-                        key={`policy-${selected ?? 'new'}`}
-                        className="dshdb-disclosure"
-                        open={policyOpen}
-                        onToggle={(event) => setPolicyOpen(event.currentTarget.open)}
+                      <section
+                        className="dshdb-settings-section dshdb-access"
+                        aria-labelledby="dshdb-access-heading"
                       >
-                        <summary>
-                          授权范围与调用限额<span>保存后生效</span>
-                        </summary>
-                        <PolicyForm
-                          draft={draft}
-                          current={current}
-                          disabled={locked || !!checking}
-                          active={policyOpen && view === 'settings'}
-                          change={change}
-                        />
-                      </details>
-                      {current && (
-                        <details key={current.id} className="dshdb-tool-details">
-                          <summary>如何在对话中使用</summary>
-                          <p>
-                            开启访问后，在获授权的对话中说：“使用「{current.name}」查看有哪些
-                            {current.engine === 'mongodb' ? '集合' : '表'}
-                            ，先只查看结构，不读取业务行。”
-                          </p>
-                          {current.effectivePolicy?.mode !== 'metadata' && (
-                            <p>
-                              确认结构后，再提出具体问题、时间范围和统计口径，优先让 Agent
-                              在数据库端汇总，只返回必要结果。
-                            </p>
-                          )}
-                          <code>{current.inspectToolName}</code>
-                          {current.effectivePolicy?.mode !== 'metadata' && (
-                            <code>{current.toolName}</code>
-                          )}
+                        <h3 id="dshdb-access-heading" ref={accessHeading} tabIndex={-1}>
+                          授权规则
+                        </h3>
+                        {!current && (
+                          <p className="dshdb-field-help">保存后可开启 Agent 访问，默认关闭。</p>
+                        )}
+                        <p className="dshdb-field-help" id="dshdb-access-scope">
+                          {current ? '已保存的授权：' : '待保存的授权：'}
+                          {(current?.effectivePolicy ?? draft.policy).access === 'sessions'
+                            ? '指定会话及其子 Agent'
+                            : '当前 DSH 的所有会话'}
+                          ，
+                          {(current?.effectivePolicy ?? draft.policy).mode === 'metadata'
+                            ? '仅查看结构'
+                            : '结构发现与只读查询'}
+                          。
+                          {current && dirty
+                            ? current.enabled
+                              ? '修改保存前仍按已保存的配置运行，可随时停用。'
+                              : '请先保存或取消修改，再开启访问。'
+                            : ''}
+                        </p>
+                        <details
+                          key={`policy-${selected ?? 'new'}`}
+                          className="dshdb-disclosure"
+                          open={policyOpen}
+                          onToggle={(event) => setPolicyOpen(event.currentTarget.open)}
+                        >
+                          <summary>
+                            授权范围与调用限额<span>保存后生效</span>
+                          </summary>
+                          <PolicyForm
+                            draft={draft}
+                            current={current}
+                            disabled={locked}
+                            active={policyOpen && view === 'settings'}
+                            change={change}
+                          />
                         </details>
-                      )}
-                    </section>
-                  </form>
+                        {current && (
+                          <details key={current.id} className="dshdb-tool-details">
+                            <summary>高级：工具标识与查询建议</summary>
+                            {current.effectivePolicy?.mode !== 'metadata' && (
+                              <p>
+                                确认结构后，再提出具体问题、时间范围和统计口径，优先让 Agent
+                                在数据库端汇总，只返回必要结果。
+                              </p>
+                            )}
+                            <code>{current.inspectToolName}</code>
+                            {current.effectivePolicy?.mode !== 'metadata' && (
+                              <code>{current.toolName}</code>
+                            )}
+                          </details>
+                        )}
+                      </section>
+                    </form>
+                  </div>
                   {current && (
-                    <div className="dshdb-settings-end">
-                      <button
-                        className="dshdb-text-button danger"
-                        type="button"
-                        disabled={locked}
-                        onClick={() => setConfirmation({ kind: 'delete' })}
-                      >
-                        删除连接
-                      </button>
-                      <span className="dshdb-field-help">
-                        仅移除此连接配置，不删除数据库中的数据。
-                      </span>
+                    <div
+                      role="tabpanel"
+                      id="dshdb-panel-activity"
+                      aria-labelledby="dshdb-tab-activity"
+                      hidden={view !== 'activity'}
+                    >
+                      {view === 'activity' && (
+                        <Activity
+                          key={current.id}
+                          connection={current}
+                          disabled={locked}
+                          onSettings={() => switchView('settings')}
+                        />
+                      )}
                     </div>
                   )}
-                </div>
-                {current && (
-                  <div
-                    role="tabpanel"
-                    id="dshdb-panel-activity"
-                    aria-labelledby="dshdb-tab-activity"
-                    hidden={view !== 'activity'}
-                  >
-                    {view === 'activity' && (
-                      <Activity
-                        key={current.id}
-                        connection={current}
-                        disabled={locked}
-                        onSettings={() => switchView('settings')}
-                      />
-                    )}
-                  </div>
-                )}
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
           {(view === 'settings' ||
             confirmation ||
@@ -842,14 +832,36 @@ export function Manager({ onClose }: { onClose: () => void }) {
             notice) && (
             <footer className="dshdb-footer">
               {confirmation ? (
-                <div
+                <dialog
+                  ref={confirmDialog}
                   className="dshdb-confirm"
-                  role="alert"
-                  aria-label={confirmation.kind === 'delete' ? '确认删除连接' : '未保存的修改'}
+                  aria-labelledby="dshdb-confirm-title"
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Tab') return;
+                    const buttons = Array.from(
+                      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                        'button:not(:disabled)',
+                      ),
+                    );
+                    const target = event.shiftKey ? buttons.at(-1) : buttons[0];
+                    const edge = event.shiftKey ? buttons[0] : buttons.at(-1);
+                    if (!buttons.length || document.activeElement === edge) {
+                      event.preventDefault();
+                      target?.focus();
+                    }
+                  }}
+                  onCancel={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!busy) setConfirmation(undefined);
+                  }}
                 >
+                  <h2 id="dshdb-confirm-title">
+                    {confirmation.kind === 'delete' ? '删除连接？' : '放弃未保存的修改？'}
+                  </h2>
                   <p>
                     {confirmation.kind === 'delete'
-                      ? `删除「${current?.name}」并撤销查询工具？数据库中的数据不会删除。`
+                      ? `将移除「${current?.name}」的配置和已保存密码，并撤销 Agent 工具。数据库中的数据不会删除。${dirty ? '未保存的修改也将丢弃。' : ''}`
                       : '修改尚未保存，是否放弃？'}
                   </p>
                   {notice?.error && <p className="dshdb-tool-error">{notice.text}</p>}
@@ -881,59 +893,102 @@ export function Manager({ onClose }: { onClose: () => void }) {
                       {busy || (confirmation.kind === 'delete' ? '确认删除' : '放弃修改')}
                     </button>
                   </div>
-                </div>
+                </dialog>
               ) : (
-                <div className="dshdb-footer-content">
-                  <div
-                    className={`dshdb-feedback ${busy && !changingAccess ? 'pending' : notice?.error ? 'error' : notice ? 'success' : ''}`}
-                    role={notice?.error ? 'alert' : 'status'}
-                    aria-live={notice?.error ? 'assertive' : 'polite'}
-                    aria-atomic="true"
-                  >
-                    {(changingAccess ? '' : busy) ||
-                      notice?.text ||
-                      (dirty
-                        ? view === 'activity'
-                          ? '有未保存的连接设置；查看记录不会保存这些修改。'
-                          : '有未保存的修改'
-                        : current
-                          ? '配置已保存'
-                          : '保存后可开启 Agent 访问。')}
-                  </div>
-                  {view === 'activity' ? (
-                    dirty && (
-                      <button
-                        type="button"
-                        className="dshdb-button"
-                        disabled={locked}
-                        onClick={() => switchView('settings')}
-                      >
-                        返回连接设置
-                      </button>
-                    )
-                  ) : (
-                    <div className="dshdb-actions">
-                      {dirty && (
-                        <button
-                          className="dshdb-text-button dshdb-reset"
-                          type="button"
-                          disabled={locked}
-                          onClick={() => navigate({ id: selected })}
-                        >
-                          取消修改
-                        </button>
-                      )}
-                      <button
-                        className="dshdb-button primary"
-                        type="submit"
-                        form="dshdb-form"
-                        disabled={locked || !!checking || (!!current && !dirty)}
-                      >
-                        {busy === '正在保存连接…' ? '保存中…' : current ? '保存修改' : '保存连接'}
-                      </button>
+                <>
+                  {view === 'settings' && (checking || checkResult) && (
+                    <div
+                      className={`dshdb-check-banner ${checking ? 'pending' : checkResult?.state}`}
+                      role={checkResult?.state === 'error' ? 'alert' : 'status'}
+                      aria-atomic="true"
+                    >
+                      <strong>
+                        {checking
+                          ? checking === 'test'
+                            ? '正在测试连接…'
+                            : '正在诊断…'
+                          : {
+                              success: '✓ 连接检查通过',
+                              error: '连接检查失败',
+                              stale: '需要重新测试',
+                              canceled: '检查已取消',
+                            }[checkResult!.state]}
+                      </strong>
+                      <p>
+                        {checking ? '可继续修改配置；修改后将取消本次检查。' : checkResult?.text}
+                      </p>
                     </div>
                   )}
-                </div>
+                  <div className="dshdb-footer-content">
+                    <div
+                      className={`dshdb-feedback ${busy && !changingAccess ? 'pending' : notice?.error ? 'error' : notice ? 'success' : ''}`}
+                      role={notice?.error ? 'alert' : 'status'}
+                      aria-live={notice?.error ? 'assertive' : 'polite'}
+                      aria-atomic="true"
+                    >
+                      {(changingAccess ? '' : busy) ||
+                        notice?.text ||
+                        (dirty
+                          ? view === 'activity'
+                            ? '有未保存的连接设置；查看记录不会保存这些修改。'
+                            : '有未保存的修改'
+                          : current
+                            ? '配置已保存'
+                            : '保存后可开启 Agent 访问。')}
+                    </div>
+                    {view === 'activity' ? (
+                      dirty && (
+                        <button
+                          type="button"
+                          className="dshdb-button"
+                          disabled={locked}
+                          onClick={() => switchView('settings')}
+                        >
+                          返回连接设置
+                        </button>
+                      )
+                    ) : (
+                      <div className="dshdb-actions">
+                        {checking ? (
+                          <button
+                            className="dshdb-button"
+                            type="button"
+                            onClick={() => cancelCheck()}
+                          >
+                            取消{checking === 'test' ? '测试' : '诊断'}
+                          </button>
+                        ) : (
+                          <button
+                            className="dshdb-button dshdb-test"
+                            type="button"
+                            disabled={locked}
+                            onClick={() => void runCheck('test')}
+                          >
+                            测试连接
+                          </button>
+                        )}
+                        {dirty && (
+                          <button
+                            className="dshdb-text-button dshdb-reset"
+                            type="button"
+                            disabled={locked}
+                            onClick={() => navigate({ id: selected })}
+                          >
+                            取消修改
+                          </button>
+                        )}
+                        <button
+                          className="dshdb-button primary"
+                          type="submit"
+                          form="dshdb-form"
+                          disabled={locked || !!checking || (!!current && !dirty)}
+                        >
+                          {busy === '正在保存连接…' ? '保存中…' : current ? '保存修改' : '保存连接'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </footer>
           )}

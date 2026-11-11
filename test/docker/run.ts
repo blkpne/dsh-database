@@ -7,6 +7,14 @@ import { waitReady, seed } from './fixtures.js';
 import { exercise } from './scenarios.js';
 import { exerciseColumnPermissions, exerciseOracleConstraints } from './permissions.js';
 import { verifyCleanup } from './cleanup-check.js';
+import {
+  seedOracleMetadata,
+  oracleColdInput,
+  exerciseOracleMetadata,
+  exerciseOracleCancellation,
+} from './oracle-metadata.js';
+import { QueryRunner } from '../../src/query.js';
+import { config } from './fixtures.js';
 import { exerciseEcommerceExample } from './ecommerce.js';
 
 const { values } = parseArgs({
@@ -99,9 +107,23 @@ if (values.help) {
               phase = 'seed';
               await seed(instance);
               phase = 'dynamic tests';
+              if (engine === 'oracle') {
+                await seedOracleMetadata(instance);
+                const cold = new QueryRunner(config(instance), async () => instance.password);
+                try {
+                  const value = await cold.inspect(oracleColdInput, instance.signal);
+                  if (value.sections.foreignKeys?.rows.length !== 2)
+                    throw new Error('Cold composite foreign key describe failed');
+                  console.log(`  oracle: first cold FK describe ${value.durationMs} ms`);
+                } finally {
+                  await cold.close();
+                }
+              }
               await exercise(instance);
               await exerciseColumnPermissions(instance);
               await exerciseOracleConstraints(instance);
+              await exerciseOracleMetadata(instance);
+              await exerciseOracleCancellation(instance);
               await exerciseEcommerceExample(instance);
               phase = 'cleanup';
             },

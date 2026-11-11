@@ -28,16 +28,10 @@ export type Connection = {
 
 export type Draft = Pick<
   Connection,
-  | 'name'
-  | 'host'
-  | 'user'
-  | 'database'
-  | 'tls'
-  | 'engine'
-  | 'authSource'
-  | 'replicaSet'
-  | 'mongoSrv'
+  'name' | 'host' | 'user' | 'database' | 'engine' | 'authSource' | 'replicaSet' | 'mongoSrv'
 > & {
+  tls: boolean | '';
+  passwordMode: 'keep' | 'replace' | 'clear';
   policy: AccessPolicy;
   port: number | '';
   maxRows: number | '';
@@ -73,7 +67,8 @@ export const emptyDraft = () =>
     database: '',
     password: '',
     clearPassword: false,
-    tls: true,
+    tls: '' as const,
+    passwordMode: 'replace' as const,
     maxRows: 500,
     timeoutMs: 15000,
   }) satisfies Draft;
@@ -94,6 +89,7 @@ export const toDraft = (c: Connection): Draft => ({
   timeoutMs: c.timeoutMs,
   password: '',
   clearPassword: false,
+  passwordMode: c.hasPassword ? 'keep' : 'replace',
 });
 
 export function hasChanges(draft: Draft, connection?: Connection): boolean {
@@ -117,6 +113,25 @@ export function switchEngine(draft: Draft, engine: Engine): Draft {
     authSource: '',
     replicaSet: '',
     mongoSrv: false,
-    tls: engine === 'sqlserver' ? true : draft.tls,
+    // A different database may have a different transport; ask again before any request.
+    tls: '',
   };
+}
+
+/** UI-only intent never enters the strict Host schema or credential store. */
+export function connectionPayload(draft: Draft) {
+  const { passwordMode, ...connection } = draft;
+  return {
+    ...connection,
+    password: passwordMode === 'replace' ? draft.password : '',
+    clearPassword: passwordMode === 'clear',
+  };
+}
+
+export function changePasswordMode(draft: Draft, passwordMode: Draft['passwordMode']): Draft {
+  return { ...draft, passwordMode, password: '', clearPassword: passwordMode === 'clear' };
+}
+
+export function securityLabel(tls: boolean | ''): string {
+  return tls === '' ? '请选择连接安全方式' : tls ? 'TLS · 验证证书与主机名' : '不要求加密';
 }

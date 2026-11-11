@@ -72,10 +72,14 @@ export function safeError(error: unknown): { code: string; message: string } {
     };
   }
   const raw = error as { code?: string | number; errorNum?: number; number?: number } | null;
-  const code = String(
-    raw?.code ??
-      (raw?.errorNum ? `ORA-${String(raw.errorNum).padStart(5, '0')}` : (raw?.number ?? '')),
-  );
+  // Normalize pg's code-less negotiation failure through the same map used by Client replay.
+  const code =
+    error instanceof Error && error.message === 'The server does not support SSL connections'
+      ? 'TLS_NOT_SUPPORTED'
+      : String(
+          raw?.code ??
+            (raw?.errorNum ? `ORA-${String(raw.errorNum).padStart(5, '0')}` : (raw?.number ?? '')),
+        );
   const messages: Record<string, string> = {
     POLICY_DENIED: '当前会话或操作未获授权，请检查连接的访问约束。',
     RATE_LIMITED: '调用额度已用完，请等待下一个分钟或小时窗口。',
@@ -99,6 +103,10 @@ export function safeError(error: unknown): { code: string; message: string } {
     ER_NO_DB_ERROR: '未选择数据库，请编辑连接设置数据库名，或使用 database.table。',
     ER_TABLEACCESS_DENIED_ERROR: '数据库账户没有访问该表的权限。',
     ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION: '此语句不允许在只读事务中执行。',
+    TLS_NOT_SUPPORTED:
+      '服务器不支持 TLS。请核对端口和服务器配置；仅在可信隔离网络且确认服务未启用 TLS 时，手动选择“不要求加密”后重新测试。',
+    HANDSHAKE_NO_SSL_SUPPORT:
+      '服务器未提供 TLS。请核对端口和服务器配置；仅在可信隔离网络且确认服务未启用 TLS 时，手动选择“不要求加密”后重新测试。',
     HANDSHAKE_SSL_ERROR: 'TLS 握手失败，请检查服务器证书与 TLS 配置。',
     SELF_SIGNED_CERT_IN_CHAIN: 'TLS 证书不受信任，请为 Node 配置受信任的 CA。',
     DEPTH_ZERO_SELF_SIGNED_CERT: 'TLS 证书不受信任，请为 Node 配置受信任的 CA。',
