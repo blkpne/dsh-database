@@ -819,7 +819,7 @@ export function Manager({ session }: { session: PanelSession }) {
                         </section>
                       )}
                       <section
-                        className="dshdb-settings-section dshdb-access"
+                        className={`dshdb-settings-section dshdb-access${current ? '' : ' is-new'}`}
                         aria-labelledby="dshdb-access-heading"
                       >
                         <h3

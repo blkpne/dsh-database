@@ -449,6 +449,11 @@
   opacity: 1;
   font-size: 12px;
 }
+/* Keep the 1px boundary without the browser's inset input surface. */
+.dshdb-fields input:not([type='checkbox']),
+.dshdb-policy input:not([type='checkbox']) {
+  appearance: none;
+}
 .dshdb-fields input:hover:not(:disabled) {
   border-color: var(--db-muted);
 }
@@ -976,6 +981,10 @@ body[data-ds-dark-theme] .dshdb-panel {
   margin-top: 20px;
   padding-top: 20px;
   border-top: 1px solid var(--db-line);
+}
+.dshdb-settings-section.dshdb-access.is-new {
+  padding-top: 0;
+  border-top: 0;
 }
 .dshdb-settings-section h3:not(.dshdb-sr-only) {
   margin: 0 0 14px;
