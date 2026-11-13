@@ -64,9 +64,10 @@ export function PolicyForm({
           此连接尚未单独保存授权策略，当前使用“当前 DSH 的所有会话”。请按需要设置并保存访问约束。
         </p>
       )}
-      <label>
+      <label className="dshdb-policy-described">
         允许的操作
         <select
+          aria-describedby="dshdb-policy-mode-help"
           value={draft.policy.mode}
           onChange={(e) => set({ mode: e.target.value as Draft['policy']['mode'] })}
         >
@@ -74,7 +75,7 @@ export function PolicyForm({
           <option value="metadata">仅结构发现</option>
         </select>
       </label>
-      <p className="dshdb-field-help">
+      <p className="dshdb-field-help" id="dshdb-policy-mode-help">
         仅结构发现不提供查询工具，也不能通过执行入口读取业务行；MongoDB 不抽样业务文档。
       </p>
       <label>
@@ -89,9 +90,10 @@ export function PolicyForm({
       </label>
       {draft.policy.access === 'sessions' && (
         <>
-          <label>
+          <label className="dshdb-policy-described">
             添加活动会话
             <select
+              aria-describedby="dshdb-session-picker-help"
               value=""
               disabled={scopeLoading || scopes.length === 0}
               onChange={(e) => {
@@ -114,12 +116,13 @@ export function PolicyForm({
           </label>
           <button
             type="button"
+            className="dshdb-button dshdb-secondary dshdb-policy-refresh"
             disabled={scopeLoading}
             onClick={() => setScopeRefresh((value) => value + 1)}
           >
             刷新活动会话
           </button>
-          <p className="dshdb-field-help" role="status">
+          <p className="dshdb-field-help" id="dshdb-session-picker-help" role="status">
             {scopeLoading
               ? '正在读取活动会话…'
               : !scopeError && scopes.length === 0
@@ -132,14 +135,17 @@ export function PolicyForm({
             </p>
           )}
           {draft.policy.sessionIds.length > 0 && (
-            <ul className="dshdb-field-help">
+            <ul className="dshdb-selected-sessions">
               {draft.policy.sessionIds.map((id) => {
                 const scope = scopes.find((entry) => entry.id === id);
                 return (
                   <li key={id}>
-                    {scope ? sessionLabel(scope) : `未在活动列表中 · ${id}`}
+                    <span className="dshdb-selected-session-name">
+                      {scope ? sessionLabel(scope) : `未在活动列表中 · ${id}`}
+                    </span>
                     <button
                       type="button"
+                      className="dshdb-button dshdb-secondary"
                       aria-label={`移除授权会话 ${id}`}
                       onClick={() =>
                         set({ sessionIds: draft.policy.sessionIds.filter((entry) => entry !== id) })
@@ -152,9 +158,10 @@ export function PolicyForm({
               })}
             </ul>
           )}
-          <label>
+          <label className="dshdb-policy-described">
             授权会话 ID（每行一个，最多 20 个）
             <textarea
+              aria-describedby="dshdb-policy-session-help"
               required
               rows={3}
               value={sessionText}
@@ -169,7 +176,7 @@ export function PolicyForm({
               }}
             />
           </label>
-          <p className="dshdb-field-help">
+          <p className="dshdb-field-help" id="dshdb-policy-session-help">
             添加或移除会话后需保存才会生效。未出现在活动列表中不代表授权失效。以宿主真实作用域判断继承。重启后相同会话
             ID 保留授权；复制会话记录不会自动获得授权。
           </p>

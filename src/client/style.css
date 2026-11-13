@@ -2,7 +2,7 @@
   --db-bg: #ffffff;
   --db-soft: #f7f7f8;
   --db-text: #202124;
-  --db-muted: #707278;
+  --db-muted: #6e7076;
   --db-line: #ececee;
   --db-input-line: #898d94;
   --db-button-line: #d8dade;
@@ -161,7 +161,7 @@
 }
 .dshdb-body {
   display: grid;
-  grid-template-columns: 184px minmax(0, 1fr);
+  grid-template-columns: 216px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
 }
@@ -315,13 +315,15 @@
   color: var(--db-muted);
 }
 .dshdb-main {
+  --db-form-width: 800px;
+  --db-page-gutter: 24px;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
 .dshdb-editor {
-  padding: 16px 24px 20px;
+  padding: 16px var(--db-page-gutter) 20px;
 }
 .dshdb-content {
   overflow: auto;
@@ -461,6 +463,8 @@
 .dshdb-policy input:user-invalid {
   border-color: var(--db-error);
   border-width: 2px;
+  /* Keep the field and its text in place when the validation border thickens. */
+  padding: 6px 9px;
 }
 .dshdb-fields input:focus {
   border-color: var(--db-accent);
@@ -605,7 +609,7 @@
 }
 .dshdb-footer {
   flex: none;
-  padding: 12px 24px;
+  padding: 12px var(--db-page-gutter);
   border-top: 1px solid var(--db-line);
   background: var(--db-bg);
 }
@@ -715,10 +719,11 @@ body[data-ds-dark-theme] .dshdb-panel {
     padding: 8px 10px;
   }
   .dshdb-main {
+    --db-page-gutter: 16px;
     flex: 1;
   }
   .dshdb-editor {
-    padding: 10px 16px 12px;
+    padding: 10px var(--db-page-gutter) 12px;
   }
   .dshdb-content {
     scrollbar-gutter: auto;
@@ -752,8 +757,11 @@ body[data-ds-dark-theme] .dshdb-panel {
     gap: 12px;
     grid-template-columns: minmax(0, 1fr) 84px;
   }
+  .dshdb-host-row > label:last-child {
+    gap: 6px;
+  }
   .dshdb-footer {
-    padding: 8px 16px;
+    padding: 8px var(--db-page-gutter);
   }
   .dshdb-feedback.is-quiet {
     display: none;
@@ -819,11 +827,15 @@ body[data-ds-dark-theme] .dshdb-panel {
 .dshdb-disclosure[open] > summary {
   margin-bottom: 12px;
 }
+.dshdb-disclosure > .dshdb-field-help {
+  margin: 0 0 16px;
+}
 .dshdb-policy {
   min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
+  font-size: 13px;
 }
 .dshdb-policy label {
   display: flex;
@@ -831,10 +843,20 @@ body[data-ds-dark-theme] .dshdb-panel {
   gap: 6px;
   margin-bottom: 16px;
 }
+.dshdb-policy label.dshdb-policy-described {
+  margin-bottom: 6px;
+}
+.dshdb-policy > .dshdb-field-help {
+  margin: 0 0 16px;
+}
+.dshdb-policy-refresh + .dshdb-field-help {
+  margin-top: 8px;
+}
 .dshdb-policy :is(input, select, textarea) {
   width: 100%;
   min-width: 0;
-  padding: 8px 10px;
+  min-height: 36px;
+  padding: 7px 10px;
   border: 1px solid var(--db-input-line);
   border-radius: 7px;
   background: var(--db-input-bg);
@@ -844,7 +866,33 @@ body[data-ds-dark-theme] .dshdb-panel {
 .dshdb-policy textarea {
   resize: vertical;
 }
+.dshdb-policy .dshdb-limit-grid label {
+  margin: 0;
+}
+.dshdb-selected-sessions {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.dshdb-selected-sessions li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+}
+.dshdb-selected-sessions li + li {
+  border-top: 1px solid var(--db-line);
+}
+.dshdb-selected-session-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dshdb-selected-sessions button {
+  flex: none;
+}
 .dshdb-policy-boundary {
+  margin: 16px 0 0;
   padding-top: 16px;
   border-top: 1px solid var(--db-line);
   color: var(--db-muted);
@@ -917,7 +965,7 @@ body[data-ds-dark-theme] .dshdb-panel {
 /* Saved connections separate editing from reading activity. */
 .dshdb-context {
   flex: none;
-  padding: 16px 24px 0;
+  padding: 16px var(--db-page-gutter) 0;
 }
 .dshdb-view-tabs {
   display: flex;
@@ -972,7 +1020,7 @@ body[data-ds-dark-theme] .dshdb-panel {
 }
 @container dshdb (max-width: 680px) {
   .dshdb-context {
-    padding: 16px 16px 0;
+    padding: 16px var(--db-page-gutter) 0;
   }
 }
 
@@ -1129,7 +1177,7 @@ body[data-ds-dark-theme] .dshdb-panel {
   border-bottom: 1px solid var(--db-line);
 }
 .dshdb-security select,
-.dshdb-limit-grid input:not([type='checkbox']) {
+.dshdb-fields .dshdb-limit-grid input:not([type='checkbox']) {
   margin-top: 6px;
 }
 .dshdb-security .dshdb-field-help {
@@ -1249,6 +1297,9 @@ body[data-ds-dark-theme] .dshdb-panel {
   .dshdb-secondary {
     min-height: 40px;
   }
+  .dshdb-policy :is(input, select) {
+    min-height: 40px;
+  }
   .dshdb-settings-section > .dshdb-field-help {
     margin-bottom: 12px;
   }
@@ -1279,7 +1330,14 @@ body[data-ds-dark-theme] .dshdb-panel {
 .dshdb-context,
 .dshdb-editor {
   width: 100%;
-  max-width: 800px;
+  max-width: var(--db-form-width);
+  margin-inline: auto;
+}
+/* Align actions and result messages with the form's inner content edges. */
+.dshdb-footer-content,
+.dshdb-check-banner {
+  width: 100%;
+  max-width: calc(var(--db-form-width) - 2 * var(--db-page-gutter));
   margin-inline: auto;
 }
 .dshdb-draft-conflict {
