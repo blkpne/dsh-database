@@ -26,7 +26,7 @@ const connection: Connection = {
   toolName: 'synthetic',
 };
 
-test('new forms require an explicit transport choice for each database; saved choices roundtrip', () => {
+test('new forms default to no TLS requirement while saved and legacy security choices roundtrip', () => {
   for (const engine of [
     'mysql',
     'mariadb',
@@ -41,10 +41,11 @@ test('new forms require an explicit transport choice for each database; saved ch
       user: 'reader',
       database: 'fixture',
     };
-    assert.equal(draft.tls, '');
-    assert.equal(connectionInput.safeParse(connectionPayload(draft)).success, false);
+    assert.equal(draft.tls, false);
+    assert.equal(connectionInput.safeParse(connectionPayload(draft)).success, true);
     for (const tls of [true, false]) {
       assert.equal(connectionInput.parse(connectionPayload({ ...draft, tls })).tls, tls);
+      assert.equal(switchEngine({ ...draft, tls }, 'mysql').tls, tls);
       assert.equal(connectionPayload(toDraft({ ...connection, engine, tls })).tls, tls);
     }
   }
@@ -148,4 +149,16 @@ test('Client diagnostics and call records recover TLS guidance from serialized c
       assert.doesNotMatch(replayed.message, /private driver detail/);
     }
   }
+});
+
+test('SRV still requires TLS and ordinary MongoDB defaults do not bypass the Host constraint', () => {
+  const draft = {
+    ...switchEngine(emptyDraft(), 'mongodb'),
+    name: 'SRV',
+    host: 'cluster.example.com',
+    database: 'fixture',
+    mongoSrv: true,
+  };
+  assert.equal(connectionInput.safeParse(connectionPayload(draft)).success, false);
+  assert.equal(connectionInput.parse(connectionPayload({ ...draft, tls: true })).tls, true);
 });

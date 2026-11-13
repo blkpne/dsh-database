@@ -1,26 +1,27 @@
-import React, { useSyncExternalStore } from 'react';
+import React from 'react';
+import { PanelSession } from './panel-session';
 import { Manager } from './manager';
 import css from './style.css';
 
-export const inject = ['slots', 'layout'];
+export const inject = ['slots'];
 interface ClientContext {
-  /** Public ILayout face, verified against dsh-client-ui-layout 0.2.0-rc.2. */
-  layout: { selectPanel(panelId: null): void };
   slots: {
     inject(name: string, callback: () => () => void): unknown;
     register(
-      options: { name: string; id: string; order: number },
-      component: React.ComponentType,
+      options:
+        | { name: 'main'; key: string }
+        | { name: 'sidebar.panellist'; id: string; order: number; label: () => string },
+      component: React.ComponentType<{ size?: number }>,
     ): () => void;
   };
   effect(callback: () => () => void, label: string): unknown;
 }
 
-function DatabaseIcon() {
+function DatabaseIcon({ size = 18 }: { size?: number }) {
   return (
     <svg
-      width="20"
-      height="20"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -34,58 +35,38 @@ function DatabaseIcon() {
 }
 
 export function apply(ctx: ClientContext) {
-  let open = false;
-  const listeners = new Set<() => void>();
-  const setOpen = (value: boolean) => {
-    open = value;
-    for (const listener of listeners) listener();
-  };
-  const subscribe = (listener: () => void) => {
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
-  };
-  function Entry() {
-    return (
-      <button
-        className="dshdb-entry"
-        type="button"
-        title="数据库"
-        aria-label="数据库"
-        onClick={() => setOpen(true)}
-      >
-        <DatabaseIcon />
-        <span>数据库</span>
-      </button>
-    );
-  }
-  function Overlay() {
-    const visible = useSyncExternalStore(subscribe, () => open);
-    return visible ? (
-      <Manager
-        onClose={() => setOpen(false)}
-        onConversation={() => {
-          ctx.layout.selectPanel(null);
-          setOpen(false);
-        }}
-      />
-    ) : null;
+  const session = new PanelSession();
+  function Panel() {
+    return <Manager session={session} />;
   }
   ctx.effect(() => {
     const style = document.createElement('style');
     style.textContent = css;
     document.head.append(style);
+    const protectDraft = (event: BeforeUnloadEvent) => {
+      if (!session.needsExitWarning) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', protectDraft);
     return () => {
+      window.removeEventListener('beforeunload', protectDraft);
+      session.dispose();
       style.remove();
-      setOpen(false);
-      listeners.clear();
     };
   }, 'dsh-database.styles');
-  ctx.slots.inject('sidebar.footer.action', () =>
-    ctx.slots.register({ name: 'sidebar.footer.action', id: 'dsh-database', order: 30 }, Entry),
-  );
-  ctx.slots.inject('shell.overlay', () =>
-    ctx.slots.register({ name: 'shell.overlay', id: 'dsh-database', order: 100 }, Overlay),
+  // The official root main slot is keyed; the sidebar list uses the same value as its id.
+  // Register the destination first so the host never exposes a dangling navigation row.
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh-database' }, Panel));
+  ctx.slots.inject('sidebar.panellist', () =>
+    ctx.slots.register(
+      {
+        name: 'sidebar.panellist',
+        id: 'dsh-database',
+        order: 30,
+        label: () => (/^en(?:-|$)/i.test(document.documentElement.lang) ? 'Database' : '数据库'),
+      },
+      DatabaseIcon,
+    ),
   );
 }

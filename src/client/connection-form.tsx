@@ -7,11 +7,13 @@ export function ConnectionForm({
   draft,
   current,
   disabled,
+  autoFocus = true,
   change,
 }: {
   draft: Draft;
   current?: Connection;
   disabled: boolean;
+  autoFocus?: boolean;
   change: <K extends keyof Draft>(key: K, value: Draft[K]) => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -34,10 +36,12 @@ export function ConnectionForm({
     <fieldset disabled={disabled} className="dshdb-fields">
       <legend className="dshdb-sr-only">数据库连接配置</legend>
       {!current && (
-        <label className="full">
-          数据库类型{' '}
-          <span className="dshdb-required" aria-hidden="true">
-            必填
+        <label>
+          <span className="dshdb-field-label">
+            数据库类型{' '}
+            <span className="dshdb-required" aria-hidden="true">
+              *
+            </span>
           </span>
           <select value={draft.engine} onChange={(e) => change('engine', e.target.value as Engine)}>
             {Object.entries(engines).map(([value, engine]) => (
@@ -48,67 +52,79 @@ export function ConnectionForm({
           </select>
         </label>
       )}
-      <div className="full dshdb-security">
-        <label htmlFor="dshdb-security">
-          连接安全{' '}
+      <label className={current ? 'full' : undefined}>
+        <span className="dshdb-field-label">
+          连接名称{' '}
           <span className="dshdb-required" aria-hidden="true">
-            {draft.mongoSrv ? 'SRV 必须启用' : '必选'}
+            *
           </span>
-        </label>
-        <select
-          id="dshdb-security"
-          required
-          aria-describedby="dshdb-security-help"
-          value={draft.tls === '' ? '' : draft.tls ? 'tls' : 'plaintext'}
-          disabled={draft.mongoSrv}
-          onChange={(e) => change('tls', e.target.value === '' ? '' : e.target.value === 'tls')}
-        >
-          <option value="" disabled>
-            请选择：按数据库服务的配置
-          </option>
-          <option value="tls">TLS 加密 · 验证证书与主机名（推荐）</option>
-          <option value="plaintext">不要求加密 · 仅限可信隔离网络</option>
-        </select>
-        <span className="dshdb-field-help" id="dshdb-security-help">
-          {draft.mongoSrv
-            ? 'MongoDB SRV 必须使用 TLS；验证证书与主机名，端口由 DNS 决定。'
-            : draft.tls === ''
-              ? '支持 TLS 的服务推荐选加密；未配置 TLS 的本地服务需明确选择“不要求加密”。'
-              : draft.tls
-                ? '证书必须受信任并匹配主机地址；验证失败时不会降级为明文。'
-                : draft.engine === 'sqlserver'
-                  ? '客户端不要求加密；SQL Server 仍可强制加密。请仅用于可信隔离网络。'
-                  : '此连接使用明文传输，凭据和数据可能暴露。请仅用于可信隔离网络。'}
-        </span>
-        {draft.engine === 'oracle' && (
-          <span className="dshdb-field-help">TLS 使用 TCPS，请填写服务器的 TCPS 端口。</span>
-        )}
-      </div>
-      <label>
-        连接名称{' '}
-        <span className="dshdb-required" aria-hidden="true">
-          必填
         </span>
         <input
           required
           maxLength={80}
-          autoFocus={!current}
+          pattern={'.*\\S.*'}
+          title="连接名称不能只包含空格"
+          autoFocus={autoFocus && !current}
           autoComplete="off"
           value={draft.name}
           onChange={(e) => change('name', e.target.value)}
           placeholder="自定义名称，例如：业务分析库"
         />
       </label>
-      <label>
-        {draft.engine === 'oracle' ? '服务名（Service Name）' : '数据库名称'}{' '}
-        <span
-          className={engines[draft.engine].databaseRequired ? 'dshdb-required' : 'dshdb-optional'}
-          aria-hidden="true"
-        >
-          {engines[draft.engine].databaseRequired ? '必填' : '可选'}
+      <div className="dshdb-host-row">
+        <label>
+          <span className="dshdb-field-label">
+            主机地址{' '}
+            <span className="dshdb-required" aria-hidden="true">
+              *
+            </span>
+          </span>
+          <input
+            required
+            maxLength={253}
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            value={draft.host}
+            onChange={(e) => change('host', e.target.value)}
+            placeholder="例如：db.example.com 或 127.0.0.1"
+            pattern={'[a-zA-Z0-9.:\\[\\]_\\-]+'}
+            title="请输入主机名或 IP，不包含协议或路径；端口请单独填写"
+          />
+        </label>
+        <label>
+          <span className="dshdb-field-label">
+            端口{' '}
+            <span className="dshdb-required" aria-hidden="true">
+              {draft.mongoSrv ? '自动' : '*'}
+            </span>
+          </span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={65535}
+            required
+            disabled={draft.mongoSrv}
+            value={draft.port}
+            onChange={(e) => change('port', e.target.value === '' ? '' : Number(e.target.value))}
+          />
+        </label>
+      </div>
+      <label className="full">
+        <span className="dshdb-field-label">
+          {draft.engine === 'oracle' ? '服务名' : '数据库名称'}{' '}
+          <span
+            className={engines[draft.engine].databaseRequired ? 'dshdb-required' : 'dshdb-optional'}
+            aria-hidden="true"
+          >
+            {engines[draft.engine].databaseRequired ? '*' : '可选'}
+          </span>
         </span>
         <input
           maxLength={128}
+          pattern={'.*\\S.*'}
+          title="数据库名称不能只包含空格"
           autoComplete="off"
           autoCapitalize="none"
           spellCheck={false}
@@ -126,52 +142,25 @@ export function ConnectionForm({
           }
         />
       </label>
-      <div className="dshdb-host-row">
-        <label>
-          主机地址{' '}
-          <span className="dshdb-required" aria-hidden="true">
-            必填
-          </span>
-          <input
-            required
-            maxLength={253}
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            value={draft.host}
-            onChange={(e) => change('host', e.target.value)}
-            placeholder="localhost"
-          />
-        </label>
-        <label>
-          端口{' '}
-          <span className="dshdb-required" aria-hidden="true">
-            {draft.mongoSrv ? '自动' : '必填'}
-          </span>
-          <input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={65535}
-            required
-            disabled={draft.mongoSrv}
-            value={draft.port}
-            onChange={(e) => change('port', e.target.value === '' ? '' : Number(e.target.value))}
-          />
-        </label>
+      <div className="dshdb-field-heading full">
+        <h4>身份认证</h4>
+        <p className="dshdb-field-help">建议使用数据库只读账户。</p>
       </div>
-      <h4 className="dshdb-field-heading full">身份认证</h4>
       <label className="dshdb-user">
-        用户名{' '}
-        <span
-          className={draft.engine === 'mongodb' ? 'dshdb-optional' : 'dshdb-required'}
-          aria-hidden="true"
-        >
-          {draft.engine === 'mongodb' ? '可选' : '必填'}
+        <span className="dshdb-field-label">
+          用户名{' '}
+          <span
+            className={draft.engine === 'mongodb' ? 'dshdb-optional' : 'dshdb-required'}
+            aria-hidden="true"
+          >
+            {draft.engine === 'mongodb' ? '可选' : '*'}
+          </span>
         </span>
         <input
           required={draft.engine !== 'mongodb'}
           maxLength={128}
+          pattern={'.*\\S.*'}
+          title="用户名不能只包含空格"
           autoComplete="off"
           autoCapitalize="none"
           spellCheck={false}
@@ -258,10 +247,42 @@ export function ConnectionForm({
           </p>
         )}
       </div>
-      <details className="dshdb-advanced full">
+      <details key={draft.engine} className="dshdb-advanced full">
         <summary>
-          高级设置<span>连接选项与查询限制</span>
+          高级设置<span>{draft.tls ? 'TLS · 验证身份' : '不要求加密'} · 查询限制</span>
         </summary>
+        <div className="dshdb-security">
+          <label htmlFor="dshdb-security">
+            连接安全{' '}
+            <span className="dshdb-required" aria-hidden="true">
+              {draft.mongoSrv ? 'SRV 必须启用' : ''}
+            </span>
+          </label>
+          <select
+            id="dshdb-security"
+            required
+            aria-describedby="dshdb-security-help"
+            value={draft.tls ? 'tls' : 'plaintext'}
+            disabled={draft.mongoSrv}
+            onChange={(e) => change('tls', e.target.value === 'tls')}
+          >
+            <option value="plaintext">不要求加密</option>
+            <option value="tls">要求 TLS · 验证证书与主机名</option>
+          </select>
+          <span className="dshdb-field-help" id="dshdb-security-help">
+            {draft.mongoSrv
+              ? 'MongoDB SRV 必须使用 TLS；验证证书与主机名，端口由 DNS 决定。'
+              : draft.tls
+                ? '证书必须受信任并匹配主机地址；验证失败时不会降级为明文。'
+                : draft.engine === 'sqlserver'
+                  ? '客户端不要求加密；SQL Server 仍可强制加密。请仅用于可信隔离网络。'
+                  : '不启用 TLS，不会自动尝试加密。仅用于可信隔离网络；远程服务建议要求 TLS。'}
+          </span>
+          {draft.engine === 'oracle' && (
+            <span className="dshdb-field-help">TLS 使用 TCPS，请填写服务器的 TCPS 端口。</span>
+          )}
+        </div>
+
         {draft.engine === 'mongodb' && (
           <>
             <div className="dshdb-limit-grid">

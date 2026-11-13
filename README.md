@@ -2,6 +2,8 @@
 
 [简体中文](README.md) · [English](README.en.md) · [npm 包](https://www.npmjs.com/package/dsh-database)
 
+> **开发分支说明**：本页及使用指南包含尚未发布的连接界面改动，截图为开发预览。npm 当前发布版为 **0.1.4**，新建时需显式选择安全方式，首次提问引导也不同；安装发布版后请以 [0.1.4 使用指南](https://github.com/blkpne/dsh-database/blob/v0.1.4/docs/usage.md) 为准。新建默认不要求加密、仅复制的首次创建引导、反馈入口与授权入口调整见 [Unreleased](CHANGELOG.md#unreleased)，尚未通过 npm 安装交付。
+
 **[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 数据库插件：让 Agent 按会话授权探索数据结构并执行只读查询。**
 
 通过 Web 界面管理连接，让 Agent 先了解表或集合的结构，再回答数据问题。支持 **MySQL、MariaDB、PostgreSQL、SQL Server、Oracle 和 MongoDB**。连接默认关闭 Agent 访问，可按会话授权，也可仅开放结构发现。
@@ -10,9 +12,9 @@
 
 [开始使用](#开始使用) · [使用指南](docs/usage.md) · [兼容性](docs/compatibility.md) · [参与贡献](CONTRIBUTING.md)
 
-![数据库连接设置：连接名称、地址、只读账户、TLS 与 Agent 访问开关](docs/assets/connection-manager.jpg)
+![新建数据库连接：类型、连接名称、地址、身份认证与高级设置](docs/assets/connection-manager.jpg)
 
-[查看配置原图](https://github.com/blkpne/dsh-database/raw/refs/heads/main/docs/assets/connection-manager.jpg) · 示例连接，不含真实凭据。
+[查看配置原图](https://github.com/blkpne/dsh-database/raw/refs/heads/main/docs/assets/connection-manager.jpg) · 未发布开发预览，不含真实凭据。
 
 ## 能做什么
 
@@ -21,7 +23,7 @@
 - **控制 Agent 访问**：连接默认关闭访问；可限定会话、只开放结构发现，并设置调用额度。
 - **定位调用问题**：查看诊断、耗时、错误阶段和取消状态；调用记录不保存 SQL、参数或业务行。
 
-本项目专注于只读数据访问。数据库账户也应配置只读权限；插件不提供写入、结果导出、SQL 历史重放或 SSH 隧道。凭据由 DSH 保存，新建连接需明确选择安全方式，推荐 TLS 证书与主机名校验。查询结果会进入 Agent 上下文，宿主会话和模型服务的数据处理范围见[查询数据如何使用](docs/usage.md#查询数据如何使用)。
+本项目专注于只读数据访问。数据库账户也应配置只读权限；插件不提供写入、结果导出、SQL 历史重放或 SSH 隧道。凭据由 DSH 保存；新建连接默认不要求加密，可在高级设置中要求 TLS 并校验证书与主机名，远程服务建议启用。已有连接的安全设置保持不变。查询结果会进入 Agent 上下文，宿主会话和模型服务的数据处理范围见[查询数据如何使用](docs/usage.md#查询数据如何使用)。
 
 ## 开始使用
 
@@ -58,11 +60,11 @@ dsh --profile web --host 127.0.0.1 --port 3080 --no-open
 1. 打开「数据库」，创建连接，填写可访问的数据库地址、数据库名和只读账户。
 2. 点击「测试连接」，成功后保存。私有 CA 的配置见 [TLS 连接](docs/usage.md#tls-连接)。
 3. 在「授权规则」中选择访问范围并保存，再开启「Agent 访问」。
-4. 使用连接顶部的「开始第一次只读对话」复制首问并返回对话，粘贴确认后发送。限定会话授权时，请选择已授权的会话。也可自行提问，例如：
+4. 首次创建成功后的提示可复制提示词；在自行选择的已授权对话中粘贴、确认并发送。日常编辑不再显示首次引导，也可直接提问，例如：
 
 > 使用「业务分析库」列出我能访问的表。先查看相关字段，再统计订单数量，并说明使用了哪张表。
 
-测试成功只代表当前配置可连接，不会自动保存或开启 Agent 访问；模型需在「设置 → 模型」另行配置。复制首问不会自动发送或替换已有输入。查询数据与分析结论在 Agent 对话中查看；「调用记录」用于查看状态、耗时和错误；完整操作见[使用指南](docs/usage.md)。
+测试成功只代表当前配置可连接，不会自动保存或开启 Agent 访问；模型需在「设置 → 模型」另行配置。复制提示词不会切换会话、自动发送或替换已有输入。查询数据与分析结论在 Agent 对话中查看；「调用记录」用于查看状态、耗时和错误；完整操作见[使用指南](docs/usage.md)。
 
 ### 场景示例：电商经营复盘
 

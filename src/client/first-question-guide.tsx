@@ -7,13 +7,13 @@ export function FirstQuestionGuide({
   connections,
   dirty,
   disabled,
-  onConversation,
+  onDismiss,
 }: {
   connection: Connection;
   connections: readonly Connection[];
   dirty: boolean;
   disabled: boolean;
-  onConversation: () => void;
+  onDismiss: () => void;
 }) {
   const copy = useRef(new QuestionCopy());
   const example = useRef<HTMLTextAreaElement>(null);
@@ -31,7 +31,7 @@ export function FirstQuestionGuide({
     setCopying(undefined);
   }, [key]);
 
-  function copyQuestion(returnToConversation: boolean) {
+  function copyQuestion() {
     if (disabled || blocked || copying === key) return;
     setCopying(key);
     setFeedback(undefined);
@@ -42,14 +42,13 @@ export function FirstQuestionGuide({
       () => {
         setCopying(undefined);
         setFeedback({ key, text: '已复制。请在获授权的对话中粘贴，确认后发送。' });
-        if (returnToConversation) onConversation();
       },
       () => {
         setCopying(undefined);
         setFeedback({
           key,
           error: true,
-          text: '未能复制。请手动复制示例，再返回获授权的对话。',
+          text: '未能复制。已选中示例，可手动复制到获授权的对话。',
         });
         example.current?.focus();
         example.current?.select();
@@ -59,7 +58,12 @@ export function FirstQuestionGuide({
 
   return (
     <section className="dshdb-first-question" aria-labelledby="dshdb-first-question-heading">
-      <h3 id="dshdb-first-question-heading">开始第一次只读对话</h3>
+      <div className="dshdb-guide-heading">
+        <h3 id="dshdb-first-question-heading">连接已创建，接下来如何使用</h3>
+        <button type="button" className="dshdb-text-button" onClick={onDismiss}>
+          关闭提示
+        </button>
+      </div>
       {blocked ? (
         <p className="dshdb-field-help">{blocked}</p>
       ) : (
@@ -67,7 +71,7 @@ export function FirstQuestionGuide({
           <p className="dshdb-field-help">
             {scoped
               ? '仅限已授权的会话。复制后，请选择已授权的会话并粘贴。'
-              : '复制后返回对话，粘贴并确认发送；也可先点击“新建会话”。'}
+              : '复制示例，在你选择的对话中粘贴并确认发送。'}
             不会自动发送，也不会替换已有输入。
           </p>
           <label className="dshdb-sr-only" htmlFor="dshdb-first-question">
@@ -77,29 +81,12 @@ export function FirstQuestionGuide({
           <div className="dshdb-question-actions">
             <button
               type="button"
-              className="dshdb-button primary"
-              disabled={disabled || copying === key}
-              onClick={() => copyQuestion(!scoped)}
+              className="dshdb-button"
+              disabled={disabled}
+              aria-disabled={copying === key || undefined}
+              onClick={copyQuestion}
             >
-              {copying === key ? '正在复制…' : scoped ? '复制首问' : '复制首问并返回对话'}
-            </button>
-            {!scoped && (
-              <button
-                type="button"
-                className="dshdb-text-button"
-                disabled={disabled || copying === key}
-                onClick={() => copyQuestion(false)}
-              >
-                仅复制
-              </button>
-            )}
-            <button
-              type="button"
-              className="dshdb-text-button"
-              disabled={disabled || copying === key}
-              onClick={onConversation}
-            >
-              返回对话
+              {copying === key ? '正在复制…' : '复制提示词'}
             </button>
           </div>
           {feedback?.key === key && (
@@ -113,8 +100,7 @@ export function FirstQuestionGuide({
         </>
       )}
       <p className="dshdb-model-guidance">
-        连接测试只检查数据库，模型需另行配置。首次使用请打开侧栏的“设置 → 模型”配置 API 密钥。
-        本页不检测模型是否就绪；若对话提示缺少模型凭据，请到该处检查。
+        若对话提示缺少模型配置，请在“设置 → 模型”中配置；测试连接只检查数据库。
       </p>
     </section>
   );

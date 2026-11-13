@@ -30,7 +30,7 @@ export type Draft = Pick<
   Connection,
   'name' | 'host' | 'user' | 'database' | 'engine' | 'authSource' | 'replicaSet' | 'mongoSrv'
 > & {
-  tls: boolean | '';
+  tls: boolean;
   passwordMode: 'keep' | 'replace' | 'clear';
   policy: AccessPolicy;
   port: number | '';
@@ -41,6 +41,47 @@ export type Draft = Pick<
 };
 
 export type SaveResponse = { connectionId: string; connections: Connection[] };
+
+/** Validate the public fields used by the form before adopting a response. */
+export function isConnectionList(value: unknown): value is Connection[] {
+  const policy = (item: unknown) => {
+    if (item === undefined) return true;
+    if (!item || typeof item !== 'object') return false;
+    const p = item as AccessPolicy;
+    return (
+      ['host', 'sessions'].includes(p.access) &&
+      ['query', 'metadata'].includes(p.mode) &&
+      Array.isArray(p.sessionIds) &&
+      p.sessionIds.every((id) => typeof id === 'string') &&
+      Number.isFinite(p.callsPerMinute) &&
+      Number.isFinite(p.callsPerHour)
+    );
+  };
+  return (
+    Array.isArray(value) &&
+    value.every((item) => {
+      if (!item || typeof item !== 'object') return false;
+      return (
+        ['id', 'name', 'host', 'user', 'database', 'authSource', 'replicaSet', 'toolName'].every(
+          (key) => typeof item[key] === 'string',
+        ) &&
+        Object.hasOwn(engines, item.engine) &&
+        Number.isSafeInteger(item.revision) &&
+        ['port', 'maxRows', 'timeoutMs'].every((key) => Number.isFinite(item[key])) &&
+        ['enabled', 'hasPassword', 'tls', 'mongoSrv'].every(
+          (key) => typeof item[key] === 'boolean',
+        ) &&
+        ['enabled', 'disabled', 'error'].includes(item.status) &&
+        ['error', 'inspectToolName'].every(
+          (key) => item[key] === undefined || typeof item[key] === 'string',
+        ) &&
+        policy(item.policy) &&
+        policy(item.effectivePolicy)
+      );
+    })
+  );
+}
+
 export function savedConnection(response: SaveResponse): Connection {
   const saved = response.connections.find((connection) => connection.id === response.connectionId);
   if (!saved) throw new Error('未收到已保存的连接，请刷新列表核对。');
@@ -67,7 +108,7 @@ export const emptyDraft = () =>
     database: '',
     password: '',
     clearPassword: false,
-    tls: '' as const,
+    tls: false,
     passwordMode: 'replace' as const,
     maxRows: 500,
     timeoutMs: 15000,
@@ -113,8 +154,8 @@ export function switchEngine(draft: Draft, engine: Engine): Draft {
     authSource: '',
     replicaSet: '',
     mongoSrv: false,
-    // A different database may have a different transport; ask again before any request.
-    tls: '',
+    // Keep an explicit security choice when switching the new connection's engine.
+    tls: draft.tls,
   };
 }
 
@@ -132,6 +173,6 @@ export function changePasswordMode(draft: Draft, passwordMode: Draft['passwordMo
   return { ...draft, passwordMode, password: '', clearPassword: passwordMode === 'clear' };
 }
 
-export function securityLabel(tls: boolean | ''): string {
-  return tls === '' ? '请选择连接安全方式' : tls ? 'TLS · 验证证书与主机名' : '不要求加密';
+export function securityLabel(tls: boolean): string {
+  return tls ? 'TLS · 验证证书与主机名' : '不要求加密';
 }

@@ -1,5 +1,46 @@
 import type { Connection } from './model.js';
 
+const guideKey = 'dsh-database:first-connection-guide:v1';
+const pageGuide = { offered: false };
+type GuideStorage = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+};
+
+/** One non-sensitive browser preference; no connection identifiers or credentials. */
+export class FirstConnectionHint {
+  private offered = false;
+  constructor(
+    private readonly storage: () => GuideStorage = () => localStorage,
+    private readonly page = pageGuide,
+  ) {}
+
+  observeExisting(count: number) {
+    if (count > 0) this.remember();
+  }
+
+  claim(): boolean {
+    if (this.offered || this.page.offered) return false;
+    try {
+      if (this.storage().getItem(guideKey) === '1') return false;
+    } catch {
+      // A blocked browser store must never prevent configuring a database.
+    }
+    this.remember();
+    return true;
+  }
+
+  private remember() {
+    this.offered = true;
+    this.page.offered = true;
+    try {
+      this.storage().setItem(guideKey, '1');
+    } catch {
+      // Keep the in-page fallback when storage is unavailable.
+    }
+  }
+}
+
 /** Only saved, unambiguous, active connections can be suggested to a conversation. */
 export function firstQuestionBlock(
   connection: Connection,
@@ -25,7 +66,7 @@ export function firstQuestion(connection: Connection): string {
   return `使用「${connection.name}」查看有哪些${connection.engine === 'mongodb' ? '集合' : '表'}，先只查看结构，不读取业务行。如果找不到这条连接，请告诉我，不要改用其他连接。`;
 }
 
-/** Clipboard writes cannot be aborted; late completions must not navigate or update a new view. */
+/** Clipboard writes cannot be aborted; late completions must not update a new view. */
 export class QuestionCopy {
   private active?: object;
 
